@@ -30,7 +30,7 @@ Then, to fine tune the policy or model trained in simulation (or sometimes to tr
 The other challenge is the model. Some still believe in Transformer like models to brute force the problem (see ACT pokicy or VAT). Some researches like Yann Lecun believe that current models are not designed to understand the world and the physics ruling the world and do not create efficiently embedding of the world. For example to predict the trajectory of a ball given camera images the Transformer will look at all details on the image including the color of the sky or the background which is very inefficient. Some of Yann Lecun models for worl model are JAP.
 
 Method:
-In this project I tried to reproduce what a pipeline to build a robot humanoid looks like. The project is called Hepa (like Hephaistos, the god of tools in greece mythology). 
+In this project I tried to reproduce what a pipeline to build a robot humanoid looks like. The project is called Hepa (like Hephaistos, the god of tools in greek mythology). 
 
 The pipeline looks as follows:
 1. CAD modeling on Fusion360
@@ -56,6 +56,9 @@ Task description:
 The task ressemble a realistic task in a warehouse like environment (e.g. a warehouse, a supermarket, a pharmacy, or even a greenhouse or a vineyard) where a robot would navigate in a an environment and use the robotic arm to place or take objects in or out of the warehouse like environment. For brievety consideration, this report will not discuss robot autonomous navigation in the warehouse environment as this does not necessarly require ML model (but don't take me wrong, in practice humanoid robots do use the policy for navigation as well). If you are curious, the robot base for navigating the robot looks like this:
 
 Now, in what follows we will assume the task to happen in a warehouse composed of drawers with objects to place or to remove from the drawers (but again you can generalize this task to many use cases, e.g. for a greenhouse it would be placing (seeding a plant) removing (harvesting a product) from a rack. Another example: in a supermarket it would be placing products in a rack (but not removing them since this is done by customers going in the supermarket). For simplicity I purposely chose not to focus on the upper part of the humanoid robot and not on the legs at the moment, an approach also used by Genesis AI (see video). 
+
+All in all, the task description is:
+"Given a request to place or remove a product (we decide to use a foam cube for simplicity) in or from a warehouse (we use a stack of drawers to mimic wahreouse racks), the robot should move its body and arms to perform the user's requested task"
 
 CAD construction:
 Before building anything we construct a 3D model of the robot. This is required to validate the design, 3D print the robot and build the simulation environment (Mujoco and Isaac Sim). For this we use Fusion360:
@@ -93,6 +96,17 @@ GIF with robot vizualisation only
 
 GIF with collision geomtries
 
+We also made sure to have realistic center of mass and intertia in our final MJCF robot file description.
+Now that we have a somehwat realistic digital twin of our robot, let's set things up to record virtual episodes of the robot doing the task we setted up (aka task description above). 
+Two methods can be used to record episodes in the simulated environment in order to train a first simple benchmark policy for the task:
+- Use a controller
+- Use a phyisical leader
+- Use IK preset 
+
+
+We use LeRobot's dataset format (also used by Nvidia and many robotic companies) to ...
+
+
 
 
 
@@ -101,55 +115,28 @@ Isaac Simulation:
 
 
 
-
-
-
-
-Studying this field also allows us to appreciate the complexity of our brain and body - a chief of engineering of mother nature. Though no physical low prevent human from copying it artificially, and this will happen sooner or later.
-
-
-
-
-Short presentation: 1. tried raspberry pi, GSN radio, different servo and non servo motors, CNC machines, LeRobot, going deeper and how the lastest state of the art models in robotics work
-
-ABSTRACT:
-Context of robot the past few years: Industry good - not humanoid robot in home yet. Super advancement but still long way to go. Big players (NVDIA, etc.) and new big startups: Figure AI and European start ups (UMA Robotics, Neura Robotics). Different visions: brut force and Yann Lecun: AMI (hardware is there but not models yet). 
-A big thanks to: LeRobot, 
+Train and fine a policy on simulated data:
 
 Short summary of current models:
 
 
 
-Goal of the project: simple demonstration task, learning purpose. It is industry focuses (warehouses) because this is where for the moment it applies the best. A big part of the project is simulation. A big part of the project is playing with the latest state of the art policies. Also the project only require a Mac, no crazy compute or robotics.
 
-Use simulation to collect data. Why this way: why not Lerobot, why CNC machine, why simulation, etc
+
+
+GOING FURTHER (maybe for a next video): the project Hepha for companies with warehouse type environment. Combine with Chatboat, Query Builder, RAG
+
+
+
+Concusion:
+
+Studying this field also allows us to appreciate the complexity of our brain and body - a chief of engineering of mother nature. Though no physical low prevent human from copying it artificially, and this will happen sooner or later.
+Industry good - not humanoid robot in home yet. Super advancement but still long way to go.
 
 Your phone video can now become a voxel world.
 depth-anything.cpp is an open-source repo for local geometry inference.
-
-
 It runs Depth Anything 3 without a Python stack.
-
-
 Also talk about latest sensing sensors
-
 Some words on LLM and why there are not necessarly the solution for robotics.
-
 Likely there is not only one way to general purpose robotics: better simulations (physics engine, compute, ), better models, better hardware. 
-
-
-
-PART 1: Hardware Description
-
-PART 2: CAD
-
-PART 3: Simulation: Mujoco and Isaac Sim (explain the NVDIA solutions)
-
-PART 4: Policies, RL or not RL
-
-PART 5: Sim to Real
-
-GOING FURTHER: the project Hepha for companies with warehouse type environment. Combine with Chatboat, Query Builder, RAG
-
-
 
