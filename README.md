@@ -101,21 +101,56 @@ Now that we have a somehwat realistic digital twin of our robot, let's set thing
 Two methods can be used to record episodes in the simulated environment in order to train a first simple benchmark policy for the task:
 - Use a controller
 - Use a phyisical leader
-- Use IK preset 
+- Use inverse kinematics (IK). IK allows you to compute the joint movements required to place the end effector (the robot hand with the gripper) in a target position. Hence when used several times it allows to artifically create a robot movement (e.g. one IK to place the gripper over the cube, one IK to open the drawer, one IK to place the cube of the open drawer, etc.). With this technique, the overall movement of the robot is not natural or flexible. For example, if the cube falls out from the hand the robot will not re fetch the cube and might even continue its movement without the cube. But it i allows to create a very large set of episodes to create a base / benchmark policy to be fine tuned later using higher quality data. 
+
+Recording using a controller or a physical leader is time consuming so we decided to use IK first to train a becnhmark policy. We will use the physical leader and controller later to fine tune the policy. Starting from a strong benchmark policy is especially important for RL because it dramatically reduces exploration, allowing the agent to refine an already competent behavior instead of wasting time discovering basic skills from scratch.
+
+Episodes obtained from IK looks like below. We randomize the position and oriention of the cube and the colors of the geometries for better generalization. For the same reason, we also add a bit of random noise to the position and orientation of the camera between epsiodes. 
+
+GIF of episodes
 
 
-We use LeRobot's dataset format (also used by Nvidia and many robotic companies) to ...
-
-
-
+Episodes are stored as a HuggingFace dataset using LeRobot's dataset format (also used by Nvidia and many robotic companies).
 
 
 Isaac Simulation:
 
+Same as Mujoco
+
+
+Train a policy on simulated data:
+
+In this section we will use the simulated data from Mujoco and Isaac to train a base Behavior Cloning (BC) policy. Thanks to IK we were able to produce thousends of episodes while trying to add some randomization to each episode. Of course, keep in mind that this is not sufficient and is just meant to obtain a benchmark policy. Imagine something unseen is in the training is observed (e.g, the cube drops from the hand, or some drawers are randomly opened) then the policy will likely fail because IK recorded episodes strongly lack of natural randomness (sometimes hard to image beforehand). 
+
+Calude: "Behavior cloning is a specific imitation learning method that learns a direct mapping from observations to actions using supervised learning, whereas imitation learning is the broader field of learning behaviors from demonstrations, including behavior cloning and more advanced methods such as inverse reinforcement learning, DAGGER, and diffusion-based policies."
+
+We will explore several Behavior Cloning (BC) methods from standard to foundation models. We summarize each model in one sentence and invite the reader to ask its favorite AI model to learn more about these models:
+
+* ACT (Action Chunking Transformer): Predicts a sequence of future actions at once using a Transformer, producing smoother and more stable robot trajectories than single-action prediction.
+* Diffusion Policy: Generates robot actions through an iterative denoising process, allowing it to model multiple valid behaviors and produce robust, high-quality motions.
+
+To open the work:
+* Vision-Language-Action (VLA) models: Learn a policy conditioned on visual observations, robot state, and natural language instructions, enabling a single model to perform many different tasks.
+* VLA-JEPA (World Models): Learns predictive latent representations of future world states, allowing the robot to reason about the consequences of its actions rather than directly imitating demonstrations.
+
+By exploring models with fundamentally different learning paradigms—from direct action prediction to generative policies, language-conditioned foundation models, and predictive world models—we aim to develop a broad understanding of modern robot learning approaches and their respective strengths and limitations.
+
+
+Mujoco Benchmark Policy:
+
+
+ACT: Overall Metrics: (Success Rate (%),  Action Error (L1/MSE/MAE), Collision Rate, Inference Speed (Hz or ms/action), Number of Demonstrations) Test Grount Truth GIF , Test Predicted GIF
 
 
 
-Train and fine a policy on simulated data:
+
+
+Fine tune a policy:
+
+PPO (Proximal Policy Optimization)
+
+
+
 
 Short summary of current models:
 
