@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Isaac Sim placeholder</title>
+  <desc id="desc">Placeholder image for Isaac Sim.</desc>
+  <rect width="1200" height="675" fill="#ecfdf5"/>
+  <rect x="150" y="140" width="900" height="395" rx="18" fill="#ffffff" stroke="#059669" stroke-width="7"/>
+  <path d="M230 455 H970 M300 455 V235 H900 V455" fill="none" stroke="#064e3b" stroke-width="8"/>
+  <circle cx="600" cy="330" r="78" fill="#d1fae5" stroke="#059669" stroke-width="8"/>
+  <text x="600" y="600" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#111827">TODO: Isaac Sim image</text>
+</svg>

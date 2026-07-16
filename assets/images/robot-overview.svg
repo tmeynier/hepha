@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Robot overview placeholder</title>
+  <desc id="desc">Placeholder image for the Hepha robot overview.</desc>
+  <rect width="1200" height="675" fill="#f3f4f6"/>
+  <rect x="72" y="72" width="1056" height="531" fill="#ffffff" stroke="#d1d5db" stroke-width="3"/>
+  <circle cx="600" cy="235" r="58" fill="#dbeafe" stroke="#2563eb" stroke-width="8"/>
+  <rect x="510" y="305" width="180" height="145" rx="16" fill="#e5e7eb" stroke="#374151" stroke-width="8"/>
+  <path d="M510 345 L360 430 M690 345 L840 430" stroke="#374151" stroke-width="18" stroke-linecap="round"/>
+  <rect x="455" y="470" width="290" height="45" rx="8" fill="#bfdbfe" stroke="#1d4ed8" stroke-width="6"/>
+  <text x="600" y="570" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#111827">TODO: robot overview image</text>
+</svg>

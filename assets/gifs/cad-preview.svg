@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">CAD preview placeholder</title>
+  <desc id="desc">Placeholder for CAD preview GIF.</desc>
+  <rect width="1200" height="675" fill="#eef2ff"/>
+  <rect x="230" y="150" width="740" height="370" rx="16" fill="#ffffff" stroke="#6366f1" stroke-width="7"/>
+  <polygon points="520,255 520,420 675,337" fill="#4f46e5"/>
+  <text x="600" y="590" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#111827">TODO: CAD preview GIF</text>
+</svg>

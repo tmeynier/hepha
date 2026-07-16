@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Predicted rollout placeholder</title>
+  <desc id="desc">Placeholder for test predicted GIF.</desc>
+  <rect width="1200" height="675" fill="#f8fafc"/>
+  <rect x="150" y="125" width="900" height="425" rx="18" fill="#ffffff" stroke="#64748b" stroke-width="7"/>
+  <polygon points="535,255 535,420 680,337" fill="#2563eb"/>
+  <text x="600" y="600" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#111827">TODO: test predicted GIF</text>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">MuJoCo visual placeholder</title>
+  <desc id="desc">Placeholder image for MuJoCo visual simulation.</desc>
+  <rect width="1200" height="675" fill="#f9fafb"/>
+  <rect x="120" y="465" width="960" height="44" fill="#e5e7eb"/>
+  <rect x="500" y="250" width="200" height="160" rx="12" fill="#dbeafe" stroke="#1d4ed8" stroke-width="7"/>
+  <path d="M500 300 L370 230 M700 300 L830 230 M530 410 L460 465 M670 410 L740 465" stroke="#111827" stroke-width="16" stroke-linecap="round"/>
+  <text x="600" y="585" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#111827">TODO: MuJoCo visual image</text>
+</svg>

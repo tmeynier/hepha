@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Collision geometries placeholder</title>
+  <desc id="desc">Placeholder for collision geometries GIF.</desc>
+  <rect width="1200" height="675" fill="#fff7ed"/>
+  <rect x="150" y="125" width="900" height="425" rx="18" fill="#ffffff" stroke="#fb923c" stroke-width="7"/>
+  <rect x="435" y="260" width="120" height="120" fill="#fed7aa" stroke="#c2410c" stroke-width="7"/>
+  <rect x="585" y="225" width="180" height="190" fill="#ffedd5" stroke="#c2410c" stroke-width="7"/>
+  <text x="600" y="600" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#111827">TODO: collision geometries GIF</text>
+</svg>

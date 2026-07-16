@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Real robot placeholder</title>
+  <desc id="desc">Placeholder for real robot GIF.</desc>
+  <rect width="1200" height="675" fill="#f8fafc"/>
+  <rect x="175" y="115" width="850" height="445" rx="18" fill="#ffffff" stroke="#94a3b8" stroke-width="7"/>
+  <polygon points="535,255 535,420 680,337" fill="#0f172a"/>
+  <text x="600" y="610" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#111827">TODO: real robot GIF</text>
+</svg>

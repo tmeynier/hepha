@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Mobile base placeholder</title>
+  <desc id="desc">Placeholder image for mobile robot base.</desc>
+  <rect width="1200" height="675" fill="#f3f4f6"/>
+  <rect x="260" y="300" width="680" height="170" rx="24" fill="#ffffff" stroke="#374151" stroke-width="8"/>
+  <circle cx="365" cy="500" r="54" fill="#111827"/>
+  <circle cx="835" cy="500" r="54" fill="#111827"/>
+  <rect x="450" y="220" width="300" height="95" rx="16" fill="#dbeafe" stroke="#2563eb" stroke-width="7"/>
+  <text x="600" y="585" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#111827">TODO: mobile base image</text>
+</svg>
