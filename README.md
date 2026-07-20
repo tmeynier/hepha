@@ -6,11 +6,12 @@ The goal is to play with these technologies and give you a sense of how humanoid
 
 The project builds a robot made of a CNC base and an upper body with robotic arms. The goal is to make it perform a simple warehouse-like task: place or remove a foam cube from drawers.
 
-This document explains the full pipeline: CAD design, 3D printing, robot assembly, MuJoCo and Isaac Sim simulation, synthetic data generation with inverse kinematics, policy training, and later fine tuning with real world data.
+This document explains the full pipeline: CAD design, 3D printing, robot assembly, MuJoCo and Isaac Sim / Isaac Lab simulation, synthetic data generation with inverse kinematics, policy training, and later fine tuning with real world data.
 
-To go even further, at the end I integrate the robot into a company ecosystem with an ERP system, a RAG, and a robot coordinator. The idea is to control many robots from one chat, while the RAG and ERP system are updated live based on the robot actions.
+To go further, I also explore a more complete company integration system around the 
+robot. The idea is to connect the robots, the ERP system, and the RAG to a central coordinator, so that a company could control many robots from one chat while keeping the ERP and RAG updated live based on the robot actions.
 
-It also summarizes what I learned while trying to understand what is important to build general purpose robots, such as humanoid robots. I give my personal opinion on the field, based on my experience: the promising areas of research, and the challenges that still remain.
+Finally, I will share my perspective on the field, based on my experience: the promising areas of research, and the challenges that still remain.
 
 This document was polished using AI, but the goal is to keep the text simple and close to my own words.
 
@@ -18,7 +19,8 @@ It is not a finished product or a review paper, so please forgive the lack of de
 
 PS: I made a summary video of the document here: **TODO: link to video**.
 
-PS: The project is called **Hepha**, like Hephaistos, the Greek god of tools, craftsmanship, and invention.
+PS: The project is called **Hepha**, like Hephaistos, the Greek god of tools, 
+craftsmanship, and invention.
 
 ![Hepha robot overview](assets/images/robot-overview.svg)
 
@@ -47,54 +49,48 @@ I am a passionate machine learning engineer from Switzerland.
 
 For the past five years I have played with robotics: Arduino, Raspberry Pi, CAD software, CNC systems including 3D printers, servo motors and stepper motors, actuators, radios, GSM modules, and, well, electronics in general.
 
-I applied my machine learning knowledge, training models and policies on GPUs, to make these physical elements move intelligently in the physical world.
+I then used my machine learning background to train policies on the cloud and make hardware move intelligently.
 
 And it is so much fun, you will see.
 
 ## Before Starting
 
-First, if you are reading this document without robotics knowledge, I strongly recommend having a look at the LeRobot project.
+If you don't have experience in robotics yet, I recommend you to have a 
+look at the LeRobot project.
 
-LeRobot is an open source project from Hugging Face that makes it easy to get a 3D printed robot setup and running a machine learning policy.
+LeRobot is an open source project from Hugging Face that helps you build a 3D printed robot and run a machine learning policy on it.
 
-**TODO:** add a GIF of my own LeRobot robot and PushT policy.
+**TODO:** add a GIF of my own LeRobot robot and a PushT policy demo.
 
 ![LeRobot demo placeholder](assets/gifs/lerobot-demo.svg)
 
-I also encourage you to create your own policy. A good one that I really 
-liked is the [DOT policy](https://github.com/IliaLarchenko/dot_policy) from @IliaLarchenko.
+I also encourage you to create your own policies in LeRobot. A custom policy that I 
+really liked is the [DOT policy](https://github.com/IliaLarchenko/dot_policy) 
+from Ilia Larchenko. It helped me well to understand the ACT policy and its 
+limitations.
 
-If you want to stay completely on your computer, you can also train virtual robots, for example with the PushT policy.
+If you want to stay on your computer, without a 3D printed robot, you can also train policies in virtual tasks, for example the PushT task trained in a Gym environment.
 
-**TODO:** add GIF of my PushT robot.
+**TODO:** add GIF of my PushT policy demo.
 
 LeRobot has evolved from a small imitation learning library into one of the most 
 complete open-source robotics frameworks. It now contains implementations of 
 many SOTA models for imitation learning, reinforcement learning, 
 Vision-Language-Action models, world models, and reward models.
 
-We will mention and use some of these models: ACT, Diffusion models, VLA, and 
-JEPA.
+I will mention and use some of these models: ACT, Diffusion models, VLA 
+(Vision-Language-Action), and JEPA.
 
 ### Prerequisites For This Project
 
 1. **CAD**: familiarity with CAD software such as Fusion360, FreeCAD or SolidWorks.
-2. ***Simulation engines**: MuJoCo from DeepMind, Isaac Sim from Nvidia.
-3. **ML knowledge**: imitation learning versus reinforcement learning, ACT, 
-   Diffusion models, VLA, JEPA.
+2. **Simulation engines**: MuJoCo from DeepMind, Isaac Sim from Nvidia.
+3. **ML knowledge**: imitation learning (particularly behavior cloning) 
+   reinforcement learning, ACT, diffusion models, VLA, JEPA.
 
-Before diving into the project, I suggest getting 
-inspired by the future of robotics and by how these technologies may impact our lives.
+## Why General Purpose Robotics Is Hard
 
-For this, go have a look at videos of Tesla Optimus, Figure AI, or European companies like Genesis AI, UMEA, 1X or Neural Robotics.
-
-It is very impressive and inspiring.
-
-**TODO:** add video links.
-
-## Why Robotics Is Hard
-
-Before continuing, let me be clear: no, you cannot simply plug Claude Code, Gemini or ChatGPT into humanoid hardware and get a fully autonomous human-looking robot.
+Let me be clear: no, you cannot simply plug Claude Code, Gemini or ChatGPT into humanoid hardware and get a fully autonomous human-looking robot.
 
 LLMs are very good at text, but the physical world is very different from text, and a lot more complex.
 
@@ -102,11 +98,10 @@ To get a sense of it, first note that for LLMs the amount of high quality traini
 
 General purpose robotics is very different.
 
-The inputs are images, camera frames, possibly other sensor data, touch data, 
-lidar data for depth, text, or audio commands from a human. Basically any input 
-your brain receives from your body.
+The inputs are images, which are much more complex to analyze than text, possibly 
+other sensor data: touch data, lidar data for depth, text, or audio commands from a human. Basically, any input your brain receives from your body.
 
-The output is a set of servo joint coordinates, meaning actions of the robot in the physical world, and potentially voice if the robot is speaking.
+The output is a set of servo joint coordinates, meaning actions of the robot in the physical world, and potentially voice if the robot should speak.
 
 Unlike for LLMs, the amount of high quality robotics data, meaning sensor values and ground truth action pairs, is very limited.
 
@@ -114,125 +109,153 @@ Also unlike LLMs, where the prediction space is rather small and discrete, the a
 
 As a result, even the best LLMs will not perform well if you simply plug them into your robot. It is also going to be very slow.
 
-One needs models capable of understanding the mapping from world observations to actions. These are often called world models.
+One needs models capable of understanding the mapping from world observations to 
+actions, and vis-versa. I call them "world models".
 
-LLMs with Transformers might not even be the right approach. See interviews and papers from Yann LeCun about world models. He recently created his startup AMI, aiming to produce state of the art world models for real world applications.
+Transformers (the main architecture of LLMs) might not even be the right 
+architecture. To 
+understand more why, see interviews and papers from Yann LeCun about world models:
+- TODO: link interview NVIDA summit
+- TODO: papers
+He recently created AMI Labs, a start-up aiming to produce state of the art world 
+models for real world applications.
 
-To summarize, the two main challenges of robotics today are:
+To summarize, two important challenges of general purpose robotics today are:
 
-1. We do not have as much data.
-2. The models might need to be different.
+1. **Data**: high quality ground truth observation-action pairs.
+2. **Adequate models**: models capable of understanding the world and the surrounding physics, while still being very fast at inference.
 
 ### Data Challenge
 
-To tackle the first challenge, good quality data, researchers use a mix of simulation and real life imitation learning episodes.
+To tackle the first challenge, good quality data, researchers use a mix of simulation and imitation learning episodes collected on the physical robot.
 
-First, you train your robot in a virtual environment that mimics the physics of the real world.
+First, you train your robot in a virtual environment that mimics real physics, and hope the policy transfers to the physical robot. This is the sim-to-real problem.
 
-You train your policy or model inside this environment and hope it transfers well to the real world. This is the sim-to-real problem.
+Nvidia created Isaac Sim for exactly this purpose: to mimic real world physics accurately and create realistic simulations, running on Nvidia GPUs. MuJoCo serves a similar purpose. MuJoCo is more commonly used in research, less visually polished than Isaac Sim, but computationally more efficient because it can run on CPUs.
 
-Nvidia created Isaac Sim exactly for that: to mimic real world physics very accurately and create realistic simulations, like a super-real video game using Nvidia GPUs.
+Simulation data is generally not enough to get a policy working outside the simulator. The policy usually needs to be fine tuned on episodes collected with the actual robot.
 
-Then, to fine tune the policy or model trained in simulation, or sometimes to train a policy directly from scratch, one uses imitation learning on actual episodes from the real world.
+To collect these episodes, the robot must perform the task while a human or another system guides its movements. The robot being trained is called the follower. It records its observations and the corresponding ground truth actions.
 
-This can be done with a leader and follower robot, or with a VR headset for example.
+This guiding process is called teleoperation. It can be done with another connected robot, called the leader, while the trained robot is the follower. It can also be done with a controller, although this becomes harder when the robot has many degrees of freedom.
 
-These real world episodes record sensor values and action pairs for specific tasks, for example folding laundry.
+**TODO:** add GIF of leader and follower + controller.
 
-Recently some startups have paid people in India to record day to day laundry task episodes.
-
-**TODO:** add video or source.
+Teleoperation produces high quality ground truth data, but it is difficult to use it to collect millions of episodes. This is why simulation is used in the first place.
 
 ### Model Challenge
 
-The other challenge is the model.
+The research community is a bit divided on whether Transformer-like models can 
+understand the world's physics well enough to be a solution for general purpose 
+robotics.
 
-Some people still believe in Transformer-like models to brute force the problem, for example ACT policy or VLA.
+Some big players are betting on scale: with enough data and compute, large models 
+will be able to understand the 3D world.
 
-Other researchers, like Yann LeCun, believe that current models are not designed to understand the world and the physics ruling the world, and that they do not efficiently create embeddings of the world.
+Other researchers, like Yann LeCun, believe that current models are not designed 
+to understand the world and the surrounding physics. They do not efficiently build useful representations of the world.
 
-For example, to predict the trajectory of a ball given camera images, a Transformer may look at all details in the image, including the color of the sky or the background, which is very inefficient.
+For example, to predict the trajectory of a ball from camera images, a Transformer may look at many irrelevant details in the image, such as the color of the sky or the background. This can be very inefficient.
 
-Some of Yann LeCun's models for world modeling are JEPA models.
+World models are interesting because they seem closer to how the brain works. Before doing an action, for example fetching a spoon in the kitchen, your brain does not directly predict every muscle movement from the beginning to the end. It first plans at a high level: find the kitchen, find the spoon, come back. Then each of these steps can be decomposed into lower level actions. For "find the kitchen", this could mean stand up, rotate your body, scan the room, and walk toward the kitchen.
+
+Each level requires a different type of intelligence. High level actions require reasoning and planning. Lower level actions are more mechanical, closer to reflexes, and must be very fast at inference. Also, before doing an important action, your brain can imagine your body doing it and predict what may happen without actually doing it. This is possible because the brain has some internal model of the world.
+
+This is the intuition behind Yann LeCun's world model direction. He has proposed models like JEPA, Joint Embedding Predictive Architecture, as a possible foundation for world models. The idea is to learn useful representations of the world in an abstract embedding space, and to predict future states in this space instead of predicting every pixel directly. A robot could then reason inside this learned world representation before actually performing an action.
 
 ## Pipeline
 
-The pipeline looks as follows:
+Now that I went through the project overview and the main challenges of general 
+purpose robotics, let's deep dive into the project and how I trained the policy:
 
 ```mermaid
-flowchart LR
-    A["CAD modeling"] --> B["3D print and construct robot"]
-    B --> C["Build simulation"]
-    C --> D["Collect simulation data"]
-    D --> E["Train policy"]
-    E --> F["Collect real world data"]
-    F --> G["Fine tune policy"]
-    G --> H["Test on real robot"]
+flowchart TD
+    A["1. CAD modeling<br/>Design the robot in Fusion360."]
+    B["2. Simulation<br/>Build MuJoCo and Isaac Sim environments to validate the robot design and collect simulation data."]
+    C["3. Leader and follower robots<br/>Build the 3D printed robots used later for real world data collection."]
+    D["4. Policy training<br/>Train policies on simulation data."]
+    E["5. Real world fine tuning<br/>Collect real world data with the follower and leader, then fine tune the policy on this data."]
+
+    A --> B --> C --> D --> E
 ```
-
-1. CAD modeling on Fusion360.
-2. 3D print and construct the leader and follower robot.
-3. Collect simulation data. We will try both MuJoCo and Isaac Sim to see the pros and cons of each.
-4. Train and fine tune policies on simulation data.
-5. Collect real world data using the follower and leader.
-6. Fine tune the policy obtained from simulation data on real world data.
-7. Test and measure the performance of the final policy on the real robot.
-
-For the leader and follower part, we will also try to record episodes using a controller, just to see how well it works.
-
-One could also use a VR headset, but this is too expensive for me for what it might bring.
 
 ## Robot Description
 
+The robot has 15 degrees of freedom.
+
 The robot is composed of a CNC part and an upper humanoid body part with servo motors.
 
-The CNC part is a CNC machine with stepper motors that I used to play with in previous projects.
+The CNC part is a CNC machine with stepper motors that I used to play with in 
+previous projects:
 
 ![Robot overview placeholder](assets/images/robot-overview.svg)
 
-The CNC part allows us to place the upper humanoid body part in different work positions.
+The CNC part allows to place the upper humanoid body part in different work 
+positions:
 
 ![CNC positions placeholder](assets/images/cnc-positions.svg)
 
 ## Task Description
 
-The task resembles a realistic task in a warehouse-like environment, for example a warehouse, a supermarket, a pharmacy, or even a greenhouse or a vineyard.
+The task resembles a realistic robot task in a warehouse-like environment. Here I call "warehouse-like environment" any environment composed of zones where robots maneuver and zones where products are stored, placed, or picked from. Examples are traditional warehouses, supermarkets, pharmacies, greenhouses, or even vineyards.
 
 A robot would navigate in the environment and use its robotic arm to place objects into storage, or remove objects from storage.
 
-For brevity, this report will not discuss autonomous navigation in the warehouse environment, as this does not necessarily require a machine learning model.
-
-But do not take me wrong: in practice, humanoid robots do use policies for navigation as well.
-
-If you are curious, the robot base for navigating the robot looks like this:
+For brevity, this report will not discuss autonomous navigation in the warehouse-like environment, as this does not necessarily require a machine learning model. If you are curious, the robot base for navigation looks like this:
 
 ![Mobile base placeholder](assets/images/mobile-base.svg)
 
-In what follows, we will assume the task happens in a warehouse composed of drawers, with objects to place into or remove from the drawers.
+In what follows, I will assume the task happens in a traditional warehouse composed of drawers, with objects to place into or remove from the drawers.
 
 You can generalize this task to many use cases. In a greenhouse, it could mean placing seeds or harvesting a product from a rack. In a supermarket, it could mean placing products on a shelf, but not removing them, since this is done by customers.
 
-For simplicity, I purposely chose not to focus on the upper part of the humanoid robot and not on the legs at the moment. This is an approach also used by Genesis AI.
-
-**TODO:** add video.
+For simplicity, I purposely chose not to focus on the upper part of the humanoid 
+robot and not on the legs at the moment. This is an approach also used by Genesis 
+AI (**TODO:** add video).
 
 All in all, the task description is:
 
-> Given a request to place or remove a product, where we use a foam cube for simplicity, in or from a warehouse, where we use a stack of drawers to mimic warehouse racks, the robot should move its body and arms to perform the user's requested task.
+> Given a request from the user to place or remove a product in or from a 
+> warehouse, the robot should move its body and arms to perform the task, where:
+>
+> 1. I use a foam cube to represent the product for simplicity.
+> 2. I use a stack of drawers to mimic warehouse racks.
 
-## CAD Construction
+## Step 1: CAD Construction
 
-Before building anything, we construct a 3D model of the robot.
+Before building anything, I construct a 3D model of the robot.
 
 This is required to validate the design, 3D print the robot, and build the simulation environment in MuJoCo and Isaac Sim.
 
-For this we use Fusion360.
+For this I use Fusion360.
 
 ![CAD model placeholder](assets/images/cad-model.svg)
 
 The path to the CAD project is **TODO**.
 
-Each component is modeled as an assembly, possibly made of several sub-components.
+Each component is modeled as an assembly, possibly made of several sub-components:
+
+```text
+hepha-robot-cad
+├── base
+├── cnc_x
+├── cnc_y
+├── shoulder_l
+├── shoulder_r
+├── head
+├── forearm_l
+├── forearm_r
+├── arm_l
+├── arm_r
+├── wrist_l
+├── wrist_r
+├── hand_l
+├── hand_r
+├── finger_l
+├── finger_r
+├── storage_rack
+└── storage_bin
+```
 
 **TODO:** add GIF of the CAD.
 
@@ -240,123 +263,100 @@ Each component is modeled as an assembly, possibly made of several sub-component
 
 From this CAD, the robot components were 3D printed and assembled, both for the leader and follower.
 
-Since I do not have a CNC machine for the leader, I will use a controller as explained later.
+Since I do not have a CNC machine for the leader, I will use a controller to lead 
+the CNC follower as explained later.
 
 **TODO:** add GIF of the real robot.
 
 ![Real robot GIF placeholder](assets/gifs/real-robot.svg)
 
-## Simulation Data Collection
+## Step 2: Simulation
 
-It is often dangerous for the hardware, and also time consuming, to directly record real world episodes with the robot.
+As mentioned above, the lack of data is one of the two main challenges in general 
+purpose robotics. For this reason, and also to validate the hardware, I first built 
+a simulation of the robot that I designed. I will try both MuJoCo from DeepMind and Isaac Sim from Nvidia to compare the two.
 
-As mentioned above, the lack of data is one of the two main current challenges in general purpose robotics.
+### MuJoCo
 
-For this reason, and also to validate the hardware, we will build a simulation of the robot that we designed.
+MuJoCo is widely used in research. It is very easy to install and has a low 
+learning curve. It is known to be computationally efficient for physics 
+simulation, while still simulating robot dynamics accurately. You can run it on 
+your local machine, while Isaac Sim requires GPUs. One important drawback of 
+MuJoCo compared with Isaac Sim is that it does not produce photorealistic 
+rendering. This can be useful when the model requires camera frames as input 
+(which is the case for humanoid robot models).
 
-We will try both MuJoCo from DeepMind and Isaac Sim from Nvidia to compare the two.
+#### From CAD To Robot Description
 
-## MuJoCo Simulation
+To create the MuJoCo simulation, I will use the Fusion360 plugin called 
+`ACDC4Robotics` to transform a CAD representation into `.urdf`, or even into an `.mjcf` file specific to MuJoCo. These are robot description files. They contain 
+not only the visual meshes of the components, but also the joint information between robot components, inertia, friction, center of mass, etc. All of this is required to produce a simulation faithful to reality.
 
-MuJoCo is widely used in research.
+To use `ACDC4Robotics`, I had to transform my original `hepha-robot-cad` project into a new project called `hepha-robot-sim`.
 
-It is very easy to install and has a low learning curve.
+In the CAD project, components are organized like robot parts. In the simulation project, they need to be organized like robot links: one component per link, and only one body inside each link component.
 
-It is known to be computationally efficient for physics simulation, while still simulating robot dynamics accurately.
+To do this, I first created an empty component for each link. Then I copied the relevant bodies into each link component, combined them into a single body, and finally added the correct joint between the links, either `slider` or `revolute`.
 
-You can run it on your local machine, while Isaac Sim requires GPUs.
-
-One important drawback of MuJoCo compared with Isaac Sim is that it does not produce photorealistic rendering. This can be useful when the model requires camera frames, which is the case for humanoid robot models.
-
-### From CAD To Robot Description
-
-To create the MuJoCo simulation, we will use the Fusion360 plugin called ACDC4Robotics to transform a CAD representation into URDF, or even into an MJCF file specific to MuJoCo.
-
-These are robot description files. They contain not only the visual meshes of the components, but also the joint information between robot components, inertia, friction, center of mass, etc.
-
-All of this is required to produce a simulation faithful to reality.
-
-Using ACDC4Robotics requires creating a SIM file project from the CAD project by creating one component per link, and not one component per robot part. Each link must have only one body.
-
-So basically, I first created an empty component for each link, then copied the bodies inside each robot link component, combined the bodies when there were several, to have only one body per robot link component, and finally added the adequate joint, slider or revolute, between each robot link.
-
-In MuJoCo I obtain:
+**TODO:** add path to the `hepha-robot-sim` file.
 
 ![MuJoCo visual placeholder](assets/images/mujoco-visual.svg)
 
-### Collision Geometries
+#### Collision Geometries
 
-However, by doing this only, we only get a robot with visual mesh geometries and controllable joints.
+The `.mjcf` file from the previous section only gives me visual mesh geometries with controllable joints. To obtain a physically realistic robot, I also need to activate physical collisions.
 
-To obtain a physically realistic robot, we also need to activate physical collisions.
+In MuJoCo, visual meshes are only used for visualization. The collision engine instead uses coarser and simpler geometries, which are faster and more numerically stable than arbitrary triangle meshes. These collision geometries are usually made from MuJoCo primitives such as boxes, spheres, and cylinders.
 
-In MuJoCo, the collision engine does not use the visual meshes for collision. Visual meshes are only here for visualization.
+For each link in my updated Fusion360 `hepha-robot-sim` project, I had to create a 
+coarse `.step` file made of primitive geometries. I decided to use only boxes. I 
+then wrote a simple Python script to transform these `.step` files, made from simple 
+Fusion360 extrusions, into an MJCF description of primitive box geometries.
 
-Instead, the simulation engine uses coarser and simpler geometries than the visuals to accelerate collision computation.
+I also made sure to have realistic center of mass and inertia in the final `.mjcf` 
+robot description file.
 
-These coarser geometries need to be made from MuJoCo primitive geometries, simple analytical shapes used for collision detection and physics.
-
-They are much faster and more numerically stable than arbitrary triangle meshes.
-
-Examples are boxes, spheres and cylinders.
-
-So for each link in my updated Fusion360 SIM project, we had to create a coarse STEP file made of primitive geometries. We decided to use only boxes.
-
-We designed a simple Python code to transform a STEP file made of simple Fusion360 extrusions into an MJCF description of primitive box geometries.
-
-**TODO:** add path of the collision STEP files.
-
-**TODO:** add GIF with robot visualization only.
-
-![MuJoCo visualization GIF placeholder](assets/gifs/mujoco-visualization.svg)
+**TODO:** add path of the collision `.step` files.
 
 **TODO:** add GIF with collision geometries.
 
 ![Collision geometries GIF placeholder](assets/gifs/collision-geometries.svg)
 
-We also made sure to have realistic center of mass and inertia in our final MJCF robot description file.
+#### Recording Episodes In Simulation
 
-Now that we have a somewhat realistic digital twin of our robot, let's set things up to record virtual episodes of the robot doing the task described above.
+Now that I have a somewhat realistic digital twin of the robot, I can set things up to record virtual episodes of the robot doing the task. Three methods can be used to record episodes in the simulated environment:
 
-### Recording Episodes In Simulation
+1. use a controller,
+2. use a physical leader,
+3. use inverse kinematics, IK.
 
-Three methods can be used to record episodes in the simulated environment in order to train a first simple benchmark policy for the task:
+IK allows to compute the joint movements required to place the end effector, the robot hand with the gripper, in a target position. When used several times, it allows to artificially create a robot movement. For example, I can decompose the movement "grab the cube and place it into the drawer" into smaller targets: "place the hand in grab position", "close the hand", "move the hand above the drawer", and "open the hand".
 
-1. Use a controller.
-2. Use a physical leader.
-3. Use inverse kinematics, IK.
+With this technique, the overall movement of the robot is not very natural or 
+flexible. For example, if the cube falls out of the hand, the robot will not 
+re-fetch it and will continue the movement without the cube. But IK makes it 
+possible to create a large set of episodes, which can be used to train a benchmark policy and fine tune it later with higher quality data.
 
-IK allows you to compute the joint movements required to place the end effector, the robot hand with the gripper, in a target position.
+Recording using a controller or a physical leader is on the other hand time 
+consuming, so I decided to use IK first to train a benchmark policy.
 
-When used several times, it allows us to artificially create a robot movement.
-
-For example: one IK target to place the gripper over the cube, one IK target to open the drawer, one IK target to place the cube in the open drawer, etc.
-
-With this technique, the overall movement of the robot is not natural or flexible.
-
-For example, if the cube falls out of the hand, the robot will not re-fetch the cube and might even continue its movement without it.
-
-But it allows us to create a very large set of episodes, which can be used to train a base or benchmark policy and then fine tune it later using higher quality data.
-
-Recording using a controller or a physical leader is time consuming, so we decided to use IK first to train a benchmark policy.
-
-We will use the physical leader and controller later to fine tune the policy.
-
-Starting from a strong benchmark policy is especially important for RL because it dramatically reduces exploration. It allows the agent to refine an already competent behavior instead of wasting time discovering basic skills from scratch.
-
-Episodes obtained from IK look like this:
-
-We randomize the position and orientation of the cube and the colors of the geometries for better generalization.
-
-For the same reason, we also add a bit of random noise to the position and orientation of the camera between episodes.
+I will use the physical leader and controller later to fine tune the policy. Starting from a strong benchmark policy is especially important for RL because it dramatically reduces exploration. It allows the agent to refine an already competent behavior instead of wasting time discovering basic skills from scratch.
 
 **TODO:** add GIF of episodes.
 
 ![MuJoCo episode placeholder](assets/gifs/mujoco-episode.svg)
 
+Before the start of each episode, I randomize the position and orientation of the 
+cube, the colors of the geometries, and add a bit of noise to the camera position and orientation between episodes for better generalization.
+
 Episodes are stored as a Hugging Face dataset using LeRobot's dataset format, also used by Nvidia and many robotics companies.
 
-## Isaac Simulation
+#### Training the policy
+
+
+
+
+### Isaac Simulation
 
 Same as MuJoCo.
 
@@ -364,11 +364,11 @@ Same as MuJoCo.
 
 ![Isaac Sim placeholder](assets/images/isaac-sim.svg)
 
-## Train A Policy On Simulated Data
+### Train A Policy On Simulated Data
 
-In this section we will use the simulated data from MuJoCo and Isaac to train a base Behavior Cloning policy.
+In this section I will use the simulated data from MuJoCo and Isaac to train a base Behavior Cloning policy.
 
-Thanks to IK, we were able to produce thousands of episodes while trying to add some randomization to each episode.
+Thanks to IK, I was able to produce thousands of episodes while trying to add some randomization to each episode.
 
 Of course, keep in mind that this is not sufficient and is only meant to obtain a benchmark policy.
 
@@ -378,25 +378,25 @@ Behavior cloning is a specific imitation learning method that learns a direct ma
 
 Imitation learning is the broader field of learning behaviors from demonstrations, including behavior cloning and more advanced methods such as inverse reinforcement learning, DAGGER, and diffusion-based policies.
 
-We will explore several Behavior Cloning methods, from standard models to foundation models.
+I will explore several Behavior Cloning methods, from standard models to foundation models.
 
-We summarize each model in one sentence and invite the reader to ask its favorite AI model to learn more about these models:
+I summarize each model in one sentence and invite the reader to ask its favorite AI model to learn more about these models:
 
 - **ACT, Action Chunking Transformer:** predicts a sequence of future actions at once using a Transformer, producing smoother and more stable robot trajectories than single-action prediction.
 - **Diffusion Policy:** generates robot actions through an iterative denoising process, allowing it to model multiple valid behaviors and produce robust, high-quality motions.
 
-We also explore more complex models to open the work.
+I also explore more complex models to open the work.
 
 For example, VLA does not only take camera frames and robot joints as input, but also text describing the user task request, like "place the red cube in the upper left drawer":
 
 - **Vision-Language-Action models:** learn a policy conditioned on visual observations, robot state, and natural language instructions, enabling a single model to perform many different tasks.
 - **VLA-JEPA, World Models:** learn predictive latent representations of future world states, allowing the robot to reason about the consequences of its actions rather than directly imitating demonstrations.
 
-By exploring models with fundamentally different learning paradigms, from direct action prediction to generative policies, language-conditioned foundation models, and predictive world models, we aim to develop a broad understanding of modern robot learning approaches and their respective strengths and limitations.
+By exploring models with fundamentally different learning paradigms, from direct action prediction to generative policies, language-conditioned foundation models, and predictive world models, I aim to develop a broad understanding of modern robot learning approaches and their respective strengths and limitations.
 
-Our dataset is made of 1000 generated episodes, split 90%-10% between train and test.
+My dataset is made of 1000 generated episodes, split 90%-10% between train and test.
 
-We trained on **TODO: GPU name, maybe RTX 5000?**
+I trained on **TODO: GPU name, maybe RTX 5000?**
 
 ## MuJoCo Benchmark Policy
 
@@ -448,7 +448,21 @@ Combine with chatbot, query builder, and RAG.
 
 ## Conclusion
 
-Studying this field also allows us to appreciate the complexity of our brain and body, which is a masterpiece of engineering from nature.
+Recently some startups have paid people in India to record day to day laundry task episodes.
+
+Still models and setup very specific to the task. But better than if then else 
+from what used to be done! Not yet one model fits all like for LLMs.
+
+And if you want to get inspired by the future of robotics and by how these technologies may impact daily life.
+
+For this, go have a look at videos of Tesla Optimus, Figure AI, or European 
+start-ups like Genesis AI, Mimic, UMEA, 1X or Neura Robotics.
+
+It is very impressive and inspiring.
+
+**TODO:** add video links.
+
+Studying this field also makes me appreciate the complexity of the human brain and body, which is a masterpiece of engineering from nature.
 
 Though no physical law prevents humans from copying it artificially, and this will happen sooner or later.
 
