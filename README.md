@@ -1,5 +1,7 @@
 # Hepha
 
+TODO: Explain why you did not use LeRobot directly.
+
 Hepha is a robotics project where I try to reproduce a simplified pipeline for building a humanoid-like robot.
 
 The goal is to play with these technologies and give you a sense of how humanoid robots work.
@@ -28,20 +30,16 @@ craftsmanship, and invention.
 
 1. [Brief Words About Me](#brief-words-about-me)
 2. [Before Starting](#before-starting)
-3. [Why Robotics Is Hard](#why-robotics-is-hard)
-4. [Pipeline](#pipeline)
-5. [Robot Description](#robot-description)
-6. [Task Description](#task-description)
-7. [CAD Construction](#cad-construction)
-8. [Simulation Data Collection](#simulation-data-collection)
-9. [MuJoCo Simulation](#mujoco-simulation)
-10. [Isaac Simulation](#isaac-simulation)
-11. [Train A Policy On Simulated Data](#train-a-policy-on-simulated-data)
-12. [MuJoCo Benchmark Policy](#mujoco-benchmark-policy)
-13. [Fine Tune A Policy](#fine-tune-a-policy)
-14. [Going Further](#going-further)
-15. [Conclusion](#conclusion)
-16. [My Personal Pipeline Of Humanoid Robots](#my-personal-pipeline-of-humanoid-robots)
+3. [Why General Purpose Robotics Is Hard](#why-general-purpose-robotics-is-hard)
+4. [Pipeline Overview](#pipeline-overview)
+5. [Step 1: CAD Modeling](#step-1-cad-modeling)
+6. [Step 2: Simulation And Benchmark Policy](#step-2-simulation-and-benchmark-policy)
+7. [Step 3: Real World Fine Tuning](#step-3-real-world-fine-tuning)
+8. [Conclusion](#conclusion)
+9. [Going Further](#going-further)
+10. [Perspective](#perspective)
+11. [References](#references)
+12. [Citation](#citation)
 
 ## Brief Words About Me
 
@@ -163,23 +161,20 @@ Each level requires a different type of intelligence. High level actions require
 
 This is the intuition behind Yann LeCun's world model direction. He has proposed models like JEPA, Joint Embedding Predictive Architecture, as a possible foundation for world models. The idea is to learn useful representations of the world in an abstract embedding space, and to predict future states in this space instead of predicting every pixel directly. A robot could then reason inside this learned world representation before actually performing an action.
 
-## Pipeline
+## Pipeline Overview
 
 Now that I went through the project overview and the main challenges of general 
-purpose robotics, let's deep dive into the project and how I trained the policy:
+purpose robotics, let's deep dive into the project:
 
 ```mermaid
 flowchart TD
-    A["1. CAD modeling<br/>Design the robot in Fusion360."]
-    B["2. Simulation<br/>Build MuJoCo and Isaac Sim environments to validate the robot design and collect simulation data."]
-    C["3. Leader and follower robots<br/>Build the 3D printed robots used later for real world data collection."]
-    D["4. Policy training<br/>Train policies on simulation data."]
-    E["5. Real world fine tuning<br/>Collect real world data with the follower and leader, then fine tune the policy on this data."]
-
-    A --> B --> C --> D --> E
+    A["1. CAD Modeling<br/>Design the robot in Fusion360."]
+    B["2. Simulation And Benchmark Policy<br/>Build MuJoCo and Isaac Sim environments to validate the robot design, collect simulation data, and train a first benchmark policy."]
+    C["3. Real World Fine Tuning<br/>Build the 3D printed leader and follower robots, collect real world data, and fine tune the policy on this data."]
+    A --> B --> C
 ```
 
-## Robot Description
+### Robot Description
 
 The robot has 15 degrees of freedom.
 
@@ -195,7 +190,7 @@ positions:
 
 ![CNC positions placeholder](assets/images/cnc-positions.svg)
 
-## Task Description
+### Task Description
 
 The task resembles a realistic robot task in a warehouse-like environment. Here I call "warehouse-like environment" any environment composed of zones where robots maneuver and zones where products are stored, placed, or picked from. Examples are traditional warehouses, supermarkets, pharmacies, greenhouses, or even vineyards.
 
@@ -221,7 +216,7 @@ All in all, the task description is:
 > 1. I use a foam cube to represent the product for simplicity.
 > 2. I use a stack of drawers to mimic warehouse racks.
 
-## Step 1: CAD Construction
+## Step 1: CAD Modeling
 
 Before building anything, I construct a 3D model of the robot.
 
@@ -270,7 +265,7 @@ the CNC follower as explained later.
 
 ![Real robot GIF placeholder](assets/gifs/real-robot.svg)
 
-## Step 2: Simulation
+## Step 2: Simulation And Benchmark Policy
 
 As mentioned above, the lack of data is one of the two main challenges in general 
 purpose robotics. For this reason, and also to validate the hardware, I first built 
@@ -338,9 +333,9 @@ re-fetch it and will continue the movement without the cube. But IK makes it
 possible to create a large set of episodes, which can be used to train a benchmark policy and fine tune it later with higher quality data.
 
 Recording using a controller or a physical leader is on the other hand time 
-consuming, so I decided to use IK first to train a benchmark policy.
+consuming, so I decided to use IK first to train a benchmark policy. I will use the physical leader and controller later to fine tune the policy.
 
-I will use the physical leader and controller later to fine tune the policy. Starting from a strong benchmark policy is especially important for RL because it dramatically reduces exploration. It allows the agent to refine an already competent behavior instead of wasting time discovering basic skills from scratch.
+Starting from a strong benchmark policy is especially important for RL because it dramatically reduces exploration. It allows the agent to refine an already competent behavior instead of wasting time discovering basic skills from scratch.
 
 **TODO:** add GIF of episodes.
 
@@ -351,56 +346,51 @@ cube, the colors of the geometries, and add a bit of noise to the camera positio
 
 Episodes are stored as a Hugging Face dataset using LeRobot's dataset format, also used by Nvidia and many robotics companies.
 
-#### Training the policy
+#### Training The Policy
 
+In this section I will use the simulated data from MuJoCo to train a base 
+Behavior Cloning (BC) policy.
 
+Thanks to IK, I was able to produce thousands of episodes while trying to add some randomization to each episode. IK is not sufficient to build a strong policy and is only meant to obtain a 
+benchmark policy. Imagine something unseen during training happens, for example the cube drops from the hand, or some drawers are randomly opened. Then the policy will likely fail because IK recorded episodes strongly lack natural randomness.
 
+BC is a specific Imitation Learning (IL) method that learns a direct mapping from 
+observations to actions using supervised learning. IL is the broader field of 
+learning behaviors from demonstrations, including BC and more advanced methods 
+such as inverse reinforcement learning and DAgger (Dataset Aggregation). 
 
-### Isaac Simulation
-
-Same as MuJoCo.
-
-**TODO:** complete this section later.
-
-![Isaac Sim placeholder](assets/images/isaac-sim.svg)
-
-### Train A Policy On Simulated Data
-
-In this section I will use the simulated data from MuJoCo and Isaac to train a base Behavior Cloning policy.
-
-Thanks to IK, I was able to produce thousands of episodes while trying to add some randomization to each episode.
-
-Of course, keep in mind that this is not sufficient and is only meant to obtain a benchmark policy.
-
-Imagine something unseen during training happens, for example the cube drops from the hand, or some drawers are randomly opened. Then the policy will likely fail because IK recorded episodes strongly lack natural randomness, which is sometimes hard to imagine beforehand.
-
-Behavior cloning is a specific imitation learning method that learns a direct mapping from observations to actions using supervised learning.
-
-Imitation learning is the broader field of learning behaviors from demonstrations, including behavior cloning and more advanced methods such as inverse reinforcement learning, DAGGER, and diffusion-based policies.
-
-I will explore several Behavior Cloning methods, from standard models to foundation models.
-
-I summarize each model in one sentence and invite the reader to ask its favorite AI model to learn more about these models:
+I will explore several BC methods, from standard models to foundation models. I summarize each model in one sentence and invite the reader to ask its favorite AI model to learn more:
 
 - **ACT, Action Chunking Transformer:** predicts a sequence of future actions at once using a Transformer, producing smoother and more stable robot trajectories than single-action prediction.
 - **Diffusion Policy:** generates robot actions through an iterative denoising process, allowing it to model multiple valid behaviors and produce robust, high-quality motions.
 
-I also explore more complex models to open the work.
+I will also explore more complex models to open the work.
 
-For example, VLA does not only take camera frames and robot joints as input, but also text describing the user task request, like "place the red cube in the upper left drawer":
+- **Vision-Language-Action models:** learn a policy conditioned on visual 
+  observations, robot state, and natural language instructions, enabling a single 
+  model to perform many different tasks. In this project, VLA takes as input the 
+  task request prompted by the user like "place the red cube in the upper 
+  left drawer" or 
+  "remove 
+  the 
+  cube from the lower right corner".
 
-- **Vision-Language-Action models:** learn a policy conditioned on visual observations, robot state, and natural language instructions, enabling a single model to perform many different tasks.
-- **VLA-JEPA, World Models:** learn predictive latent representations of future world states, allowing the robot to reason about the consequences of its actions rather than directly imitating demonstrations.
+- **VLA-JEPA, World Models:** learn predictive latent representations of future world states, allowing the robot to reason about possible action consequences in latent space before acting, instead of only imitating demonstrations directly.
 
-By exploring models with fundamentally different learning paradigms, from direct action prediction to generative policies, language-conditioned foundation models, and predictive world models, I aim to develop a broad understanding of modern robot learning approaches and their respective strengths and limitations.
+By exploring models with fundamentally different learning paradigms, I aim to 
+give you (and myself) a broader understanding of modern robot learning approaches, 
+with their respective strengths and limitations.
 
-My dataset is made of 1000 generated episodes, split 90%-10% between train and test.
+My dataset is made of 1000 generated episodes of around 60 seconds each, split 90%-10% between train and test.
 
-I trained on **TODO: GPU name, maybe RTX 5000?**
+The policies were trained for up to 100 epochs with early stopping, on an NVIDIA RTX 5090 GPU with 32 GB VRAM, 60 GB RAM, and 15 vCPUs.
 
-## MuJoCo Benchmark Policy
+##### ACT
 
-### ACT
+###### Training
+
+**TODO** add some weight and bias plots to show how many steps + how ofter 
+validation and checkpoints are saved.
 
 **TODO:** add training command.
 
@@ -408,7 +398,7 @@ I trained on **TODO: GPU name, maybe RTX 5000?**
 
 **TODO:** add Weights & Biases link.
 
-### Metrics
+###### Metrics
 
 | Metric | Value |
 | --- | --- |
@@ -418,27 +408,236 @@ I trained on **TODO: GPU name, maybe RTX 5000?**
 | Inference Speed (Hz or ms/action) | TODO |
 | Number of Demonstrations | TODO |
 
-### Qualitative Results
+###### Qualitative Results
 
 **TODO:** add test ground truth GIF.
 
-![Ground truth rollout placeholder](assets/gifs/test-ground-truth.svg)
+**TODO:** add test predicted GIF.
+
+##### Diffusion Policy
+
+###### Training
+
+**TODO:** add training command.
+
+**TODO:** add Hugging Face model and dataset link.
+
+**TODO:** add Weights & Biases link.
+
+###### Metrics
+
+| Metric | Value |
+| --- | --- |
+| Success Rate (%) | TODO |
+| Action Error (L1 / MSE / MAE) | TODO |
+| Collision Rate | TODO |
+| Inference Speed (Hz or ms/action) | TODO |
+| Number of Demonstrations | TODO |
+
+###### Qualitative Results
+
+**TODO:** add test ground truth GIF.
 
 **TODO:** add test predicted GIF.
 
-![Predicted rollout placeholder](assets/gifs/test-predicted.svg)
+##### Vision-Language-Action (VLA)
 
-## Fine Tune A Policy
+###### Training
 
-### PPO, Proximal Policy Optimization
+**TODO:** add training command.
 
-**TODO:** complete this section later.
+**TODO:** add Hugging Face model and dataset link.
 
-Notes:
+**TODO:** add Weights & Biases link.
 
-- Update repo to normal.
-- Ask to add model to W&B and save model to Hugging Face.
-- Ask for the command for training ACT.
+###### Metrics
+
+| Metric | Value |
+| --- | --- |
+| Success Rate (%) | TODO |
+| Action Error (L1 / MSE / MAE) | TODO |
+| Collision Rate | TODO |
+| Inference Speed (Hz or ms/action) | TODO |
+| Number of Demonstrations | TODO |
+
+###### Qualitative Results
+
+**TODO:** add test ground truth GIF.
+
+**TODO:** add test predicted GIF.
+
+##### VLA-JEPA
+
+###### Training
+
+**TODO:** add training command.
+
+**TODO:** add Hugging Face model and dataset link.
+
+**TODO:** add Weights & Biases link.
+
+###### Metrics
+
+| Metric | Value |
+| --- | --- |
+| Success Rate (%) | TODO |
+| Action Error (L1 / MSE / MAE) | TODO |
+| Collision Rate | TODO |
+| Inference Speed (Hz or ms/action) | TODO |
+| Number of Demonstrations | TODO |
+
+###### Qualitative Results
+
+**TODO:** add test ground truth GIF.
+
+**TODO:** add test predicted GIF.
+
+#### Fine Tune The Policy Using RL
+
+Reinforcement Learning (RL) is a subset of machine learning where a policy learns by doing actions in an environment and getting rewards from these actions. In the RL setup, the robot is usually called the agent. It explores the environment, tries actions, receives rewards, and updates its policy based on what worked or not. With this setup, it is easy to see why RL is interesting for robotics: robots also learn by acting in a physical or simulated world.
+
+However, using RL directly in the real world can be dangerous and inefficient. Imagine asking a humanoid robot to learn walking from scratch with an untrained policy. It would perform random actions for a long time before mastering the movement, and the hardware, or even the environment around it, could be damaged. Another difficulty is reward design. For example, what should the reward for walking be? "Stay upright and move in all directions" sounds reasonable, but a robot could achieve this reward in a strange way without really learning a natural walking behavior.
+
+This is why RL is often more useful for fine tuning in robotics. The robot should already have a strong benchmark policy, so it can explore safely and only improve what still needs adjustment. For example, a humanoid robot that already knows how to walk and avoid collisions could use RL to refine its behavior for a more specific objective. RL can also help the robot adapt on the fly: if it encounters new situations and collides with objects, the policy can be fine tuned to avoid these failures in the future, a bit like humans learn from experience.
+
+In this project, I use RL after each BC policy is trained. The goal is not to 
+learn the whole task from scratch, but to update the policy and make the movements safer and smoother. For example, RL can help prevent self-collisions, such as the left and right arms colliding with each other.
+
+I will use Proximal Policy Optimization (PPO), which is very commonly used in robotics. With PPO, I can train the policy by simulating many robots in parallel, all collecting experience and updating the same policy. So in MuJoCo, I simulate **TODO: number of robots** robots in parallel. Each robot, or agent, starts from the benchmark policy, and the policy is then fine tuned through PPO. The simulations are run on **TODO: GPU specs, same as before**.
+
+**TODO:** describe some mock specs and results.
+
+**TODO:** add GIF of all robots in MuJoCo simulation.
+
+#### Conclusion On Mujoco's Benchmark Policy
+
+### Isaac Sim - Isaac Lab
+
+#### Recording The Episodes In Isaac Sim
+
+#### Training The Policy
+
+##### ACT
+
+###### Training
+
+**TODO:** add training command.
+
+**TODO:** add Hugging Face model and dataset link.
+
+**TODO:** add Weights & Biases link.
+
+###### Metrics
+
+| Metric | Value |
+| --- | --- |
+| Success Rate (%) | TODO |
+| Action Error (L1 / MSE / MAE) | TODO |
+| Collision Rate | TODO |
+| Inference Speed (Hz or ms/action) | TODO |
+| Number of Demonstrations | TODO |
+
+###### Qualitative Results
+
+**TODO:** add test ground truth GIF.
+
+**TODO:** add test predicted GIF.
+
+##### Diffusion Policy
+
+###### Training
+
+**TODO:** add training command.
+
+**TODO:** add Hugging Face model and dataset link.
+
+**TODO:** add Weights & Biases link.
+
+###### Metrics
+
+| Metric | Value |
+| --- | --- |
+| Success Rate (%) | TODO |
+| Action Error (L1 / MSE / MAE) | TODO |
+| Collision Rate | TODO |
+| Inference Speed (Hz or ms/action) | TODO |
+| Number of Demonstrations | TODO |
+
+###### Qualitative Results
+
+**TODO:** add test ground truth GIF.
+
+**TODO:** add test predicted GIF.
+
+##### Vision-Language-Action (VLA)
+
+###### Training
+
+**TODO:** add training command.
+
+**TODO:** add Hugging Face model and dataset link.
+
+**TODO:** add Weights & Biases link.
+
+###### Metrics
+
+| Metric | Value |
+| --- | --- |
+| Success Rate (%) | TODO |
+| Action Error (L1 / MSE / MAE) | TODO |
+| Collision Rate | TODO |
+| Inference Speed (Hz or ms/action) | TODO |
+| Number of Demonstrations | TODO |
+
+###### Qualitative Results
+
+**TODO:** add test ground truth GIF.
+
+**TODO:** add test predicted GIF.
+
+##### VLA-JEPA
+
+###### Training
+
+**TODO:** add training command.
+
+**TODO:** add Hugging Face model and dataset link.
+
+**TODO:** add Weights & Biases link.
+
+###### Metrics
+
+| Metric | Value |
+| --- | --- |
+| Success Rate (%) | TODO |
+| Action Error (L1 / MSE / MAE) | TODO |
+| Collision Rate | TODO |
+| Inference Speed (Hz or ms/action) | TODO |
+| Number of Demonstrations | TODO |
+
+###### Qualitative Results
+
+**TODO:** add test ground truth GIF.
+
+**TODO:** add test predicted GIF.
+
+#### Fine Tune The Policy Using RL
+
+#### Conclusion On Isaac Sim & Lab Benchmark Policy
+
+## Step 3: Real World Fine Tuning
+
+#### Recording Real World Episodes
+
+
+
+#### Fine Tune The Policy
+
+Use real world episodes + RL
+
+## Conclusion
+
+One advantage of simulation = smaller model
 
 ## Going Further
 
@@ -446,52 +645,33 @@ Maybe for a next video: the project Hepha for companies with warehouse-type envi
 
 Combine with chatbot, query builder, and RAG.
 
-## Conclusion
+## Perspective
 
-Recently some startups have paid people in India to record day to day laundry task episodes.
+I think this is a very special moment for AI and robotics. During the last few years, researchers managed to train smart models on text, images, and audio. This is remarkable, especially because these models never learned directly from the physical world. They learned about water and fire from internet data, but they never drank a cup of water, jumped into a lake, or burned themselves. Humans learn a large part of intelligence from these experiences. If a person only learned life from textbooks, without ever touching, moving, falling, carrying, or feeling anything, I doubt this person would develop the same intelligence as everyone else.
 
-Still models and setup very specific to the task. But better than if then else 
-from what used to be done! Not yet one model fits all like for LLMs.
+If models could interact with the physical world, the learning signal would become much richer. A brain without a body is limited. The body gives the brain an enormous amount of data every second: vision, hearing, touch, smell, taste, temperature, proprioception, balance, pain, interoception, etc. Current AI models can show impressive intelligence while still failing at basic physical tasks. This is not surprising: models have had more access to quantum physics books than to data about how to drink a cup of water.
 
-And if you want to get inspired by the future of robotics and by how these technologies may impact daily life.
+The race to give AI a body has started. Hardware has become more complex, and robots are becoming more capable. This is visible in videos from Figure AI, Genesis AI, or Tesla Optimus. At the same time, society needs to prepare carefully. Jobs will change. The quantity of compute required to train and run these systems is staggering, so the environmental impact also matters. The prospects are very interesting, but also worrying if misused.
 
-For this, go have a look at videos of Tesla Optimus, Figure AI, or European 
-start-ups like Genesis AI, Mimic, UMEA, 1X or Neura Robotics.
+Still, it is important not to get ahead of ourselves. As explained in this report, the complexity of the physical world is nowhere close to the complexity of well formatted and bounded text data, or even image and audio data. Industry is progressing fast, but humanoid robots are not in homes yet. The models and setups are still very specific to each task. It is already much better than the old "if this, then that" robotics logic, but it is still not one model fits all like with LLMs.
 
-It is very impressive and inspiring.
+My view is that the biggest issue is data. With good quality data, research in model architecture becomes easier and will follow more naturally. One solution is simulation: scan the world, recreate every object digitally in 3D using AI, and give each object realistic physical properties. Highly realistic simulation would allow training benchmark policies for humanoid robots before safely rolling them out in the physical world.
 
-**TODO:** add video links.
+Then, as done in this report, a basic benchmark policy trained on simulated data can be used to roll out a humanoid robot more safely in the physical world. The first humanoid robots people see will probably not be very smart, or even very useful. But they will collect crucial real world data to make the next generation of robots smarter, similar to what Tesla cars do today for autonomous driving. This can become a positive loop: the more people buy robots, the smarter the robots become; and the smarter the robots become, the more people buy them.
 
-Studying this field also makes me appreciate the complexity of the human brain and body, which is a masterpiece of engineering from nature.
+An entirely new industry will likely rise around this. Compute will need to become 
+more efficient, maybe with quantum computing one day. Hardware will become more precise. Models will become smarter and better adapted to understanding the physical world and mapping observations to actions.
 
-Though no physical law prevents humans from copying it artificially, and this will happen sooner or later.
+These new models will not only be useful for humanoid robots. If they can understand the physical world better than current models, they could become useful for many other applications too: autonomous cars, aircraft, physics research, chemistry, and probably many fields I cannot even imagine yet. They may even go beyond human intuition in some cases. For example, if you throw a ball in the air, a strong world model could predict not only where it will land, but also its speed, its temperature change, and many other physical details that humans do not naturally estimate.
 
-Industry is progressing fast, but humanoid robots are not in homes yet.
-
-There has been huge progress, but there is still a long way to go.
-
-Your phone video can now become a voxel world.
-
-`depth-anything.cpp` is an open-source repo for local geometry inference.
-
-It runs Depth Anything 3 without a Python stack.
-
-Also talk about latest sensing sensors.
-
-Some words on LLMs and why they are not necessarily the solution for robotics.
-
-Likely there is not only one way to general purpose robotics: better simulations, better physics engines, more compute, better models, and better hardware.
-
-## My Personal Pipeline Of Humanoid Robots
-
-1. Simulation is required. Imagine a CAD specific to robotics, with an AI able to create any realistic 3D object in the CAD with all physical properties. Create a metaverse world where robots are trained. AI understanding 3D space is fundamental.
-2. Models should be very efficient at learning, and inference should be very fast. Big big models are not necessarily good.
-3. Very good hardware with many sensors.
-4. Fine tune with real world data.
-5. Fine tune with RL in the real world.
+Studying this field also makes us appreciate the complexity of the human brain and 
+the body. Both are masterpieces of engineering from nature. No physical law prevents 
+humans from copying parts of this artificially, and this may happen sooner or later. Maybe it takes 30 years, maybe 100 years.
 
 ## References
 
 This section is still a work in progress.
 
 See [references/README.md](references/README.md).
+
+## Citation
