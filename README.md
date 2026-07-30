@@ -125,6 +125,8 @@ To summarize, two important challenges of general purpose robotics today are:
 
 ### Data Challenge
 
+haptic gloves to perform the target task.
+
 To tackle the first challenge, good quality data, researchers use a mix of simulation and imitation learning episodes collected on the physical robot.
 
 First, you train your robot in a virtual environment that mimics real physics, and hope the policy transfers to the physical robot. This is the sim-to-real problem.
@@ -163,8 +165,141 @@ This is the intuition behind Yann LeCun's world model direction. He has proposed
 
 ## Pipeline Overview
 
+I purposely made the robot different than traditional robot in order to test 
+embodiment (make embodiment more challenging).
+
+Because Diffusion Policy learns a score function (gradient field) over the action space rather than a direct mapping, it is significantly better at recovering from unexpected physical bumps, obstacles, or displaced objects mid-task.
+
+Because every robot has a different physical body (kinematics, arm length, gripper type, joint limits) and camera setup (angles, focal lengths, lighting), deploying these models zero-shot on an unseen robot is very difficult and usually fails.  1. Do people actually use them "Zero-Shot"?Rarely in practice. Zero-shot transfer (placing a model directly onto a totally new robot with zero extra training) is still an open research challenge.  
+
+When people say a model is a "Generalist" or "Zero-Shot," it usually means zero-shot for new objects, new locations, or new natural language instructions on a robot body the model has already seen during pretraining.
+
+What works Zero-Shot: Handing the model a new item (e.g., "pick up the purple dinosaur toy") on a standard arm it was trained on (like a Franka Emika Panda or Aloha dual-arm).  What breaks Zero-Shot: Putting the model on a different hardware setup. If your camera is mounted 15 cm lower, or your gripper moves at a different speed, zero-shot performance drops significantly.
+
+If you have a robot that wasn't in the training set (e.g., a custom UR5, xArm, or custom 3D-printed arm), you don't use the model zero-shot. Instead, you use Few-Shot Fine-Tuning.
+Like what is done between Dark Forest Labs and Mimic!
+
+Neither should be considered truly Hepha-compatible zero-shot until an embodiment adapter is trained.
+
+hepha_act_100_simple_drawer_5: 82 episodes with 500 tentatives
+Total 100 episode for 646 attends
+
 Now that I went through the project overview and the main challenges of general 
 purpose robotics, let's deep dive into the project:
+
+Video Pre-Training (VLA Models): Pre-train a Vision-Language-Action (VLA) model or World Action Model (WAM) on internet-scale video datasets (including human everyday videos and video game play logs). This establishes spatial "common sense," visual scene understanding, and motion priors.
+
+The safer one is residual RL:
+final_action = frozen_bc_policy(obs) + rl_residual(obs)
+So ACT/Diffusion gives a reasonable behavior prior, and PPO only learns corrections.
+Behavioral Cloning (BC) almost always happens BEFORE Reinforcement Learning (RL).
+
+In standard robotics and simulation pipelines, BC acts as the pre-training (warm-start) phase, while RL acts as the fine-tuning phase.
+Residual RL: A pre-trained BC network outputs a base action, while a smaller RL network runs concurrently to learn an additive "correction" offset ($\mathbf{a}_{\text{final}} = \mathbf{a}_{\text{BC}} + \mathbf{a}_{\text{RL}}$).
+
+It’s easy to look at recent advances in Vision-Language-Action (VLA) models and Diffusion Policies and think, "If the AI can observe human demos and clone them directly, why do we still need physics engines like MuJoCo or Isaac Sim?"
+
+The short answer: A foundation model + BC dataset can teach a robot what to do, but without a simulation engine, it has no safe place to learn how not to fail.
+
+Pure BC is inherently open-loop imitation. A simulation engine provides the closed-loop feedback, safety sandbox, and synthetic scaling necessary to turn an brittle demo mimic into a reliable industrial policy.
+
+In a BC dataset, human teleoperators almost always perform the task successfully. They rarely show the robot:
+
+What to do if its hand slips off an object halfway through a grasp.
+
+How to recover if its foot slides 2 centimeters on a slick floor.
+
+How to stabilize itself after a sudden external bump.
+
+Because the policy only saw pristine trajectories during BC, a tiny 1% tracking error in frame 10 shifts the robot into an unfamiliar state. In frame 11, it makes a bigger error, and by frame 20, it drifts completely off course or crashes.
+
+Where Simulation Fits In: You put the BC policy inside a physics simulation, 
+intentionally knock it around with random forces, and let RL teach the robot 
+error-recovery behaviors across millions of failure cases—without damaging a $150,
+000 real-world robot. + Infinite Data Augmentations (Domain Randomization). Collecting 500 real-world teleop demonstrations takes weeks of human effort.
+
+Simulation scales your modest BC dataset into millions of extreme edge-case variations overnight.
+
+Real-Time Execution Speed (Simulation as a Safety Guardrail)
+Large foundation models are computationally heavy. Running an 8-Billion parameter VLA model directly in an end-to-end control loop on onboard edge compute often yields low update rates (e.g., 5 Hz to 10 Hz).
+
+A humanoid balancing or manipulating delicate objects requires high-frequency control loops (100 Hz to 1,000 Hz).
+
+The SOTA Setup: The Foundation Model / BC policy runs slowly in the background, outputting high-level spatial targets at 5 Hz.
+
+The Sim-Trained RL / Controller: A lightweight policy (trained in simulation) runs onboard at 500 Hz, consuming those spatial targets and maintaining instantaneous dynamic balance and torque regulation.
+
+Pretrained Backbone: You download a model like OpenVLA or Octo. It already understands what a "cup" looks like, what "pick up" means, and basic physics/spatial awareness from being trained on ~1,000,000 robot trajectories (e.g., the Open X-Embodiment dataset).  Collect 10 to 50 Teleoperated Demos: You use a VR controller, leader-follower arm, or space-mouse to teleoperate your specific robot doing a task 20–50 times while recording camera feeds and your robot's exact joint angles.Parameter-Efficient Fine-Tuning (LoRA): Instead of training the entire 7-billion-parameter model from scratch, you freeze the model and train a small "adapter" (LoRA).  Result: In 15–30 minutes of training on a single GPU, the model adapts its spatial understanding to your exact camera placement, lens distortion, and motor response.
+
+Cross-embodiment adaptation is one of the purposes of VLA fine-tuning.
+
+Google Deep Mind Gemini Robotics 2
+
+Genie (Generative Interactive Environments)
+
+PEFT means Parameter-Efficient Fine-Tuning.
+pipeline uses LoRA, a common PEFT method
+
+DDPM:
+discrete probabilistic denoising steps
+usually predicts noise or clean samples
+
+Flow matching:
+learns a continuous velocity field
+integrates an ODE from noise to actions
+
+low matching often needs fewer inference iterations. SmolVLA uses this to generate action chunks efficiently.
+
+Pretrained SmolVLA
+  vision-language understanding
+  temporal action generation
+  original 6D embodiment interface
+              │
+              ▼
+Replace/reconfigure embodiment interface for 15D Hepha data
+              │
+              ▼
+Fine-tune action expert with LoRA
+Fully train state/action projection layers
+              │
+              ▼
+15D Hepha SmolVLA policy
+
+Flow matching is a generative method that teaches the policy how to transform random noise into a meaningful action sequence.
+
+Summarize my journey in robotics, discovering the different challenges of AI 
+applied to robotics:
+
+1. Failing is important: deterministic versus noise, world model versus simple BC
+2. ACT verus diffusion: choose the right path? But ACT also 
+3. 
+
+
+
+Hepha is a substantial embodiment change.
+SmolVLA was not primarily pretrained on this dual-arm gantry configuration. The vision-language backbone can transfer object and task understanding, but the 15D coordinated motion must mostly be learned from your demonstrations.
+LoRA is a good baseline, not guaranteed to be optimal.
+For a dramatically different body, I would compare:
+Current configuration: LoRA on the expert and state/action projections.
+Stronger adaptation: LoRA on the VLA, but fully train state_proj, action_in_proj, action_out_proj, and action-time projections.
+Full fine-tuning, if GPU memory permits.
+The official LeRobot interface supports fully training selected modules with --peft.full_training_modules. That experiment is especially relevant for Hepha.
+
+
+Pretrained VLA
+      ↓
+Target-robot demonstrations
+(images + language + robot state + actions)
+      ↓
+Adapt state/action projections to the new robot
+      ↓
+LoRA or full fine-tuning
+      ↓
+Held-out offline validation
+      ↓
+Closed-loop simulation/robot evaluation
+      ↓
+Additional demonstrations or RL refinement
 
 ```mermaid
 flowchart TD
@@ -265,6 +400,8 @@ the CNC follower as explained later.
 
 ![Real robot GIF placeholder](assets/gifs/real-robot.svg)
 
+ How Models Bridge the Hardware GapTo make transfer as easy as possible, these models use specific tricks to abstract away hardware differences:Action Space Normalization: Models rarely predict raw motor voltages or specific joint angles. Instead, they output End-Effector Delta Poses ($\Delta x, \Delta y, \Delta z, \Delta \text{roll}, \Delta \text{pitch}, \Delta \text{yaw}, \text{gripper status}$).Why this helps: "Move 2cm left and close the claw" is universally understood, whether your robot has 6 joints, 7 joints, or linear actuators.Inverted Kinematics (IK): The model tells your robot where the hand should go in 3D space ($\Delta xyz$), and your local robot controller uses IK to figure out what joint movements are required.Camera Normalization: Cameras are typically resized and normalized to fixed resolutions (e.g., 224x224 RGB) so the visual backend can process them regardless of the camera model.
+
 ## Step 2: Simulation And Benchmark Policy
 
 As mentioned above, the lack of data is one of the two main challenges in general 
@@ -272,6 +409,8 @@ purpose robotics. For this reason, and also to validate the hardware, I first bu
 a simulation of the robot that I designed. I will try both MuJoCo from DeepMind and Isaac Sim from Nvidia to compare the two.
 
 ### MuJoCo
+
+A Gym-style environment in robotics refers to a standardized Python interface used to train autonomous agents via Reinforcement Learning (RL).
 
 MuJoCo is widely used in research. It is very easy to install and has a low 
 learning curve. It is known to be computationally efficient for physics 
@@ -387,6 +526,26 @@ The policies were trained for up to 100 epochs with early stopping, on an NVIDIA
 
 ##### ACT
 
+# TODO: add paper summary at the beginning
+
+ACT addresses a related problem from a different angle.
+
+Instead of:
+
+observation → next action
+
+ACT predicts a chunk of future actions:
+
+observation_t
+↓
+Transformer
+↓
+[a_t, a_t+1, a_t+2, ... a_t+k]
+
+Why?
+
+Because predicting individual actions at high frequency makes errors accumulate and can produce jittery behavior.
+
 ###### Training
 
 **TODO** add some weight and bias plots to show how many steps + how ofter 
@@ -415,6 +574,19 @@ validation and checkpoints are saved.
 **TODO:** add test predicted GIF.
 
 ##### Diffusion Policy
+
+But robot behavior is often multimodal.
+
+Imagine grabbing a cup. You could approach it:
+
+← from left
+
+or
+
+from right →
+
+A regression model trained with MSE can effectively average different valid demonstrations, potentially producing an action that corresponds to neither strategy.
+Diffusion Policy instead learns a distribution over action sequences:
 
 ###### Training
 
@@ -658,11 +830,105 @@ Still, it is important not to get ahead of ourselves. As explained in this repor
 My view is that the biggest issue is data. With good quality data, research in model architecture becomes easier and will follow more naturally. One solution is simulation: scan the world, recreate every object digitally in 3D using AI, and give each object realistic physical properties. Highly realistic simulation would allow training benchmark policies for humanoid robots before safely rolling them out in the physical world.
 
 Then, as done in this report, a basic benchmark policy trained on simulated data can be used to roll out a humanoid robot more safely in the physical world. The first humanoid robots people see will probably not be very smart, or even very useful. But they will collect crucial real world data to make the next generation of robots smarter, similar to what Tesla cars do today for autonomous driving. This can become a positive loop: the more people buy robots, the smarter the robots become; and the smarter the robots become, the more people buy them.
+VAM are a good way to also learn a world model.
+The exact BERT architecture matters less today than the paradigm it helped establish:
+
+large-scale pretraining → general representation → downstream adaptation
+Transferring this philosophy to physical embodiment—through Vision-Language-Action (VLA) models like RT-2, PaLM-E, OpenVLA, and VoxPoser—unlocks physical zero-shot and few-shot behaviors:
+This helped establish the modern foundation-model / scaling paradigm:
+
+Train one enormous general model → prompt it to perform many different tasks.
+
+That philosophy is increasingly being transferred to robotics.
+
+RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic 
+Control: This paper helped establish what we now call Vision-Language-Action (VLA)
+models. It demonstrated that knowledge learned from Internet-scale vision/language data could improve robotic generalization and semantic reasoning.
 
 An entirely new industry will likely rise around this. Compute will need to become 
 more efficient, maybe with quantum computing one day. Hardware will become more precise. Models will become smarter and better adapted to understanding the physical world and mapping observations to actions.
+Real-world deployment sets a hard constraint: the model has to act as fast as the world moves. 
 
 These new models will not only be useful for humanoid robots. If they can understand the physical world better than current models, they could become useful for many other applications too: autonomous cars, aircraft, physics research, chemistry, and probably many fields I cannot even imagine yet. They may even go beyond human intuition in some cases. For example, if you throw a ball in the air, a strong world model could predict not only where it will land, but also its speed, its temperature change, and many other physical details that humans do not naturally estimate.
+
+There is a need to large scale open source datasets for robot for large pretraining
+robot foundation-model idea.
+RT-X models are robot foundation models trained on data from many different robots, tasks, and institutions, rather than one model trained only on one robot.
+
+This is strategically important because robotics has a data problem. There is no robotics equivalent of the entire Internet.
+
+The data story is particularly compelling
+
+This also relates directly to your earlier Street View idea.
+
+You don't necessarily need robot data to learn all parts of the model.
+
+You could pretrain spatial understanding from enormous passive datasets:
+
+multi-view images + video→3D spatial representation
+
+Then learn generic dynamics from video:
+
+Z
+t
+3D
+	​
+
+→Z
+t+1
+3D
+	​
+
+
+Then use the much scarcer robot datasets to learn action-conditioned dynamics:
+
+(Z
+t
+3D
+	​
+
+,a
+t
+	​
+
+)→Z
+t+1
+3D
+	​
+
+
+This matters because robot demonstrations are expensive, while images and videos are essentially unlimited.
+
+BILLIONS OF IMAGES / VIDEOS
+          ↓
+learn geometry + objects + semantics
+          ↓
+       3D WORLD MODEL
+          ↓
+MILLIONS OF ROBOT TRAJECTORIES
+          ↓
+learn action → physical consequence
+          ↓
+ACTION-CONDITIONED 3D WORLD MODEL
+          ↓
+thousands of demonstrations
+for your specific robot
+          ↓
+       ROBOT POLICY
+
+Yes, absolutely. Video game data—especially footage of real people playing games—is currently one of the primary sources used to pre-train world models and foundation models for robotics
+
+DeepMind trained Genie on 200,000+ hours of unlabelled 2D platformer gameplay videos.
+
+goal = zero-shot generalization
+Fei-Fei Li’s World Labs
+
+I do not believe in full zero shot learning
+
+world models are heavily accelerating the development of autonomous vehicles (AVs).
+Platforms like NVIDIA's Cosmos world foundation model are built specifically to handle both general robotics and autonomous driving
+
+https://marble.worldlabs.ai/
 
 Studying this field also makes us appreciate the complexity of the human brain and 
 the body. Both are masterpieces of engineering from nature. No physical law prevents 
