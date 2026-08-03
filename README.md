@@ -1,6 +1,6 @@
 # Hepha
 
-This document presents *Hepha*, a robotics project for building and training a 
+This document presents *Hepha*, a robotics project where I build and train a 
 bimanual robot moving in a warehouse environment.
 
 GIFS of the robot moving in the warehouse
@@ -11,7 +11,8 @@ The goals of the project are:
 
 * Become familiar with the technologies and models used in general-purpose
   robotics (such as humanoid robots).
-* Explore the challenges and current research directions in humanoid robotics.
+* Explore the challenges and current research directions in general-purpose
+  robotics.
 * Serve as a tutorial for readers interested in building their own robots. I
 deliberately document my trials and errors to help readers understand the
 challenges involved and develop an intuition for each SOTA model.
@@ -20,6 +21,10 @@ The robot consists of two parts: (1) an upper body composed of a bimanual
 robot mounted on a CNC gantry system, and (2) a mobile base, similar to an
 Autonomous Mobile Robot (AMR), that enables the robot to navigate throughout
 the warehouse environment.
+
+GIFS of the real upper body
+
+GIFS of the mobile base
 
 Most of this document focuses on the robot's upper body, covering the complete
 development pipeline: mechanical design in Fusion360, 3D printing, simulation in 
@@ -31,8 +36,8 @@ coordination between multiple robots, and their integration into a broader
 enterprise architecture. In this architecture, the robots, the ERP system, and
 the Retrieval-Augmented Generation (RAG) pipeline are connected to a central
 coordinator, allowing operators to control an entire fleet of robots from a
-single chat interface while continuously updating the ERP and RAG knowledge
-base based on the robots' actions.
+single chat interface while continuously updating the ERP and RAG according to 
+the robots' actions.
 
 For the robot's upper body, the task is the following:
 
@@ -82,7 +87,7 @@ I am a passionate machine learning engineer from Switzerland.
 
 For the past five years I have played with robotics: Arduino, Raspberry Pi, CAD
 software, CNC systems including 3D printers, servo motors and stepper motors,
-actuators, radios, GSM modules, and, well, electronics in general.
+actuators, radios, GSM modules, ... and many more.
 
 I then used my machine learning background to train my own policies on the cloud and
 make hardware move intelligently.
@@ -113,15 +118,15 @@ LeRobot is an amazing open source project. It has evolved from a small
 imitation learning library into one of the most complete open-source robotics 
 frameworks. It contains implementations of most of the leading model 
 architectures in imitation learning and reinforcement learning, ranging from ACT and 
-Diffusion Policy to recent open-source Vision-Language-Action (VLA) models. It 
-also includes JEPA (Joint Embedding Predictive Architecture) family models.
+Diffusion Policy to recent open-source Vision-Language-Action (VLA) and JEPA (Joint 
+Embedding Predictive Architecture) family models.
 
 I will mention and use some of these models: ACT, Diffusion models, VLAs, 
 and V-JEPA 2. I will reuse LeRobot's dataset schema and some of its model
 architectures. However, for learning purposes, I will not use the
-low-code approach provided by LeRobot and instead build the models from scratch. 
+low-code approach provided by LeRobot and instead build the models myself. 
 I believe that building things yourself is one of the best ways to develop intuition 
-and truly understand how everything works.
+and truly understand how things work.
 
 ### Prerequisites For This Project
 
@@ -129,7 +134,7 @@ and truly understand how everything works.
    SolidWorks.
 2. **Simulation engines**: MuJoCo from DeepMind, Isaac Sim from Nvidia.
 3. **ML knowledge**: imitation learning (particularly behavior cloning)
-   reinforcement learning, ACT, diffusion models, VLA, JEPA.
+   and reinforcement learning.
 
 ## Why General Purpose Robotics Is Hard
 
@@ -146,8 +151,8 @@ thousand common words or tokens.
 
 General purpose robotics is very different.
 
-The inputs are images, which are much more complex to analyze than text,
-possibly other sensor data: touch data, lidar data for depth, text, or audio
+The inputs are images, which are much more complex to analyze than text. Possibly 
+other sensor data: touch data, lidar data for depth, text, or audio
 commands from a human. Basically, any input your brain receives from your body.
 
 The output is a set of servo joint coordinates, meaning actions of the robot in
@@ -162,15 +167,18 @@ action space in robotics is continuous, and immense.
 As a result, even the best LLMs will not perform well if you simply plug them
 into your robot. It is also going to be very slow.
 
-We need models capable of understanding the mapping from world observations to
-actions, and vis-versa. Models capable of learning a coherent embedding of the 
-world - commonly called *world models*. 
+Actually, the autoregressive prediction objective that made LLMs so successful may 
+not be the best way to learn representations of the physical world. Predicting every 
+pixel of a future image (or reconstructing an entire image, as in an autoencoder) is 
+an extremely difficult task, and much of that visual detail is irrelevant for 
+decision making. 
 
-The autoregressive prediction objective that made LLMs so successful may not be the best way to learn representations of the physical world.
-
-Predicting every pixel of a future image (or reconstructing an entire image, as in an autoencoder) is an extremely difficult task, and much of that visual detail is irrelevant for decision making. Instead, recent work such as Yann LeCun's **Joint Embedding Predictive Architecture (JEPA)** proposes learning to predict a high-level representation (embedding) of missing or future information rather than the pixels themselves.
-
-A typical JEPA consists of three components:
+Instead we need models capable of understanding the mapping from world 
+observations to actions, and vis-versa. Models capable of learning a coherent 
+embedding of the world - called *world models*. Recent work in this direction 
+includes Yann LeCun's JEPA model architecture family. The idea is to predict a 
+high-level representation (embedding) of missing or future information rather than 
+the pixels themselves. A typical JEPA consists of:
 
 - **Context encoder** $f_\theta$: encodes the observed part of the input.
 - **Target encoder** $g_\xi$: encodes the target (for example, a future frame, a masked region, or another view).
@@ -182,107 +190,150 @@ $$
 h_\phi(f_\theta(x_{\text{context}})) \approx g_\xi(x_{\text{target}})
 $$
 
-This objective encourages the model to capture the semantic information needed to understand and predict the world, instead of spending capacity on reconstructing fine-grained visual details that often have little impact on future decisions.
-LeCun has also recently founded **AMI Labs**, a startup focused on developing next-generation world models for real-world AI applications.
+This objective encourages the model to capture the semantic information needed to 
+understand and predict the world, instead of spending capacity on reconstructing 
+fine-grained visual details. LeCun recently founded [AMI Labs](https://amilabs.xyz/), 
+a startup focused exactly on developing these next-generation world models.
 
-To summarize, two important challenges of general purpose robotics today are:
+To summarize, two important challenges of general purpose robotics are:
 
 1. **Data**: high quality ground truth observation-action pairs.
 2. **Adequate models**: models capable of understanding the world and the
-   surrounding physics, while still being very fast at inference (30-50Hz).
-In
-   practice, they should support inference at roughly **30–50 Hz**, meaning the
-   policy produces a new action every **20–33 ms**, which is fast enough for
-   smooth manipulation and responsive robot control. Slower models increase latency and
-   reduce the robot's ability to react quickly to changes in the environment.
+surrounding physics, while still being very fast at inference. They should 
+support inference at roughly 30–50 Hz, meaning the policy produces a 
+new action every 20–33 ms. This is fast enough for smooth manipulation and 
+good responsiveness. Slower models reduce the robot's ability to react quickly to 
+changes in the environment.
 
 ### The Data Challenge
 
-To tackle the first challenge, good quality data, researchers use a mix of 
-internet data, simulation data and real world imitation learning episodes 
-(collected on the physical robot).
+Data primarily comes from three sources:
+
+- **Internet data** (text, images, and videos): used to train large foundation 
+models on billions of examples. These models learn general-purpose representations 
+of the world, although they are not optimized for a specific robot task. Their 
+representations can later be adapted to robotics through models such as SmolVLA, or 
+by generating synthetic robot data with systems such 
+as [FLUX.3 + Mimic](https://bfl.ai/blog/flux-3-mimic).
 
 
+- **Simulation data**: generated in physics simulators or even video games (FPV 
+video games can be used to train humanoid robots). Simulation allows millions of 
+episodes to be generated safely, quickly, and at low cost. The challenge is 
+the *sim-to-real gap*: no simulator perfectly reproduces the real world. Differences 
+often prevent a policy trained purely in simulation from working on a real robot. 
+NVIDIA developed (Isaac Sim)[https://developer.nvidia.com/isaac] specifically 
+to narrow this gap by providing highly realistic, GPU-accelerated simulations.
+(MuJoCo)[https://mujoco.org] (developed by Deep Mind) serves a 
+similar purpose and is widely used in robotics research. While less visually 
+realistic than Isaac Sim, it is computationally much more efficient and can even run 
+on CPUs, making it ideal for rapid experimentation.
 
 
+- **Real robot episodes**: demonstrations collected by *teleoperating* a robot. 
+During teleoperation, the robot records a sequence of observations together with the 
+ground-truth actions performed by the human operator. These observation-action pairs 
+form the demonstrations used for imitation learning. One common setup is a 
+*leader–follower* system: the human moves a leader robot, while the follower 
+robot mirrors its movements and records the data. Human can control the robot with 
+game controller, a SpaceMouse, VR headsets, motion-capture gloves (e.g. [Mimic 
+  Robotics](https://www.mimicrobotics.com/)), or leader–follower robot 
+arms. Full-body teleoperation suits are even being developed to 
+control an entire humanoid robot. Real robot demonstrations provide the 
+highest-quality supervision because they capture the true dynamics, sensor noise, 
+and physical interactions of the target robot. However, collecting them is slow, 
+expensive, and difficult to scale to millions of episodes.
 
+```mermaid
+flowchart TD
 
+%% =========================
+%% Data Sources
+%% =========================
+A1["🌐 Internet"]
+A2["🎮 Simulation Data"]
+A3["🤖 Real Robot Episodes"]
 
-First, you train your robot in a virtual environment that mimics real physics,
-and hope the policy transfers to the physical robot. This is the sim-to-real
-problem.
+%% =========================
+%% Base Policy
+%% =========================
+B["Train / Fine-Tune<br/>Base Policy"]
 
-Nvidia created Isaac Sim for exactly this purpose: to mimic real world physics
-accurately and create realistic simulations, running on Nvidia GPUs. MuJoCo
-serves a similar purpose. MuJoCo is more commonly used in research, less
-visually polished than Isaac Sim, but computationally more efficient because it
-can run on CPUs.
+%% =========================
+%% RL Fine-Tuning
+%% =========================
+C["RL Fine-Tuning<br/>in Simulation Environment"]
 
-Simulation data is generally not enough to get a policy working outside the
-simulator. The policy usually needs to be fine tuned on episodes collected with
-the actual robot.
+%% =========================
+%% Final Policy
+%% =========================
+D["Final Robot Policy"]
 
-To collect these episodes, the robot must perform the task while a human or
-another system guides its movements. The robot being trained is called the
-follower. It records its observations and the corresponding ground truth
-actions.
+A1 --> B
+A2 --> B
+A3 --> B
 
-This guiding process is called teleoperation. It can be done with another
-connected robot, called the leader, while the trained robot is the follower. It
-can also be done with a controller, although this becomes harder when the robot
-has many degrees of freedom.
+B --> C
+C --> D
+```
 
-**TODO:** add GIF of leader and follower + controller.
+All three sources of data are generally used together to build a strong base 
+policy.
 
-Teleoperation produces high quality ground truth data, but it is difficult to
-use it to collect millions of episodes. This is why simulation is used in the
-first place.
-
-haptic gloves to perform the target task.
+Once the base policy is trained, Isaac Sim and Mujoco provide an environment 
+for RL fine-tuning. The robot can practice millions of additional interactions 
+while optimizing task-specific reward functions. Examples of rewarded actions: 
+successfully grasping an object, avoiding collisions, minimizing energy consumption, 
+maintaining balance (for humanoids), etc.
 
 ### The Model Challenge
 
-The research community is a bit divided on whether Transformer-like models can
-understand the world's physics well enough to be a solution for general purpose
-robotics.
+The research community is still divided on what the best approach for learning
+world models will be.
 
-Some big players are betting on scale: with enough data and compute, large
-models will be able to understand the 3D world.
+Some believe that scaling data, model size, and compute will solve the problem. 
+Of course this is the narrative of some big companies like NVIDIA, for obvious 
+business reasons.
 
-Other researchers, like Yann LeCun, believe that current models are not designed
-to understand the world and the surrounding physics. They do not efficiently
-build useful representations of the world.
+Others, including Yann LeCun, argue that simply scaling data and compute may
+not be sufficient. Instead, they advocate architectures inspired by some
+aspects of human cognition. Before performing an action, humans typically
+reason and plan using an internal representation of the world built through
+years of experience. We can mentally simulate the consequences of different
+actions without physically executing them. Once a plan has been chosen,
+lower-level motor control—what we often call *muscle memory*—executes it
+rapidly and with little conscious reasoning.
 
-For example, to predict the trajectory of a ball from camera images, a
-Transformer may look at many irrelevant details in the image, such as the color
-of the sky or the background. This can be very inefficient.
+This suggests that different levels of intelligence require different
+computational mechanisms. High-level decision making involves reasoning,
+planning, and predicting future outcomes, while low-level control is more
+mechanical, closer to reflexes, and must operate at very high frequency.
 
-World models are interesting because they seem closer to how the brain works.
-Before doing an action, for example fetching a spoon in the kitchen, your brain
-does not directly predict every muscle movement from the beginning to the end.
-It first plans at a high level: find the kitchen, find the spoon, come back.
-Then each of these steps can be decomposed into lower level actions. For "find
-the kitchen", this could mean stand up, rotate your body, scan the room, and
-walk toward the kitchen.
+For readers interested in this perspective, I highly recommend Yann LeCun's
+lecture *A Path Towards Autonomous Machine Intelligence*. In particular,
+Figure 1 provides an excellent illustration of this hierarchical view of
+intelligence and world models.
 
-Each level requires a different type of intelligence. High level actions require
-reasoning and planning. Lower level actions are more mechanical, closer to
-reflexes, and must be very fast at inference. Also, before doing an important
-action, your brain can imagine your body doing it and predict what may happen
-without actually doing it. This is possible because the brain has some internal
-model of the world.
+There is unlikely to be a single path toward efficient world
+models. Better architectures, larger and higher-quality datasets, and
+increased compute will probably all contribute. The most successful systems
+will likely combine advances in each of these areas.
 
-This is the intuition behind Yann LeCun's world model direction. He has proposed
-models like JEPA, Joint Embedding Predictive Architecture, as a possible
-foundation for world models. The idea is to learn useful representations of the
-world in an abstract embedding space, and to predict future states in this space
-instead of predicting every pixel directly. A robot could then reason inside
-this learned world representation before actually performing an action.
+In this project I experimented with a diverse set of methods to build my own 
+opinion and understanding.
 
-## My Robot Pipeline
+![Figure 1: JEPA world-model architecture](assets/images/figure_1.png)
+
+**Figure 1:** High-level architecture proposed by Yann LeCun as a foundation for
+the JEPA family of world-model architectures. The perception module estimates
+the current world state, the world model predicts future states under candidate
+actions, the critic evaluates their expected cost, and the actor selects the
+best action sequence. Short-term memory stores intermediate states, while the
+configurator coordinates all modules for the current task.
+
+## Project Pipeline
 
 
-Explain why you did not directly use LeRobot
 
 I purposely made the robot different than traditional robot in order to test
 embodiment (make embodiment more challenging).
@@ -1244,6 +1295,8 @@ Studying this field also makes us appreciate the complexity of the human brain
 and the body. Both are masterpieces of engineering from nature. No physical law
 prevents humans from copying parts of this artificially, and this may happen
 sooner or later. Maybe it takes 30 years, maybe 100 years.
+
+## Future Work
 
 ## References
 
