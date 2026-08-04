@@ -333,6 +333,53 @@ configurator coordinates all modules for the current task.
 
 ## Project Pipeline
 
+As mentioned earlier the project pipeline will focus on the design and training 
+of the upper body, dual arm, robot. At the end of the project I will briefly 
+mention about the moving base.
+
+1. The pipeline will naturally start with the construction of the robot in Fusion360.
+2. I will explain how to obtain a proper robot description file (URDF) 
+from Fusion360 to build a simulation environment (a digital twin of the real 
+robot) in Mujoco and Isaac Sim. 
+3. Use imitation learning to train a base policy. I start in the simulation 
+   environment only (I will start in Mujoco). Starting in Mujoco is good as a 
+   playground and to get a sense of how hard is the problem. It 
+allows to not have to deal wih real robot hardware issues and noise first. On 
+purpose I enumerate some steps that I took that are not necessarly useful to 
+obtain the trained policy at the end, but it allowed me to better understand key 
+   aspects of the problem as well as building a strong intuition behind some of 
+   the SOTA model I will use.
+I will start with a simplified version of the task "Place a randomly positioned 
+   cube in a specifed drawer", with perfect observation-action pairs (no noise, 
+   everything is good). You might then think that the policy will perform well. 
+   Actually not. And this hightlights a very important aspect of the problem that 
+   I will explain deeper later: the importance of failure, a good policy is not a 
+   policiy that can . 
+
+
+will first start in the simulation environment only. I think 
+
+
+
+```mermaid
+flowchart TD
+    A["1. CAD Modeling<br/>Design the robot in Fusion360."]
+    B["2. Simulation<br/>Validate design and train first policy."]
+    C["3. Real World Fine Tuning<br/>Collect data and fine tune policy."]
+    A --> B --> C
+```
+
+
+- The trajectory problem
+- The importance of failure, so RL
+- The autoregressive failure: the importance of closed loop simulation and testing
+- The importance of embodiment
+- big model and small model
+- The challenge of zero shot learning
+- The importance of inference speed
+- Discuss all metrics that are generally used in robotics to access the goodness
+of a policy (closed loop validation)
+
 
 
 I purposely made the robot different than traditional robot in order to test
@@ -509,9 +556,6 @@ Make a comparison diagram between LLMs and robotics
 1. Failing is important: deterministic versus noise, world model versus simple
    BC
 2. ACT verus diffusion: choose the right path? But ACT also
-
-Discuss all metrics that are generally used in robotics to access the goodness
-of a policy (closed loop validation)
 
 Like when you loose an arm, there is a period of adapation, embodiment, you have
 to train: this is RL. Your perseption of the world does not change, but your
