@@ -48,6 +48,14 @@ For the robot's upper body, the task is the following:
 >
 > - *Place the blue cube from the storage bin into drawer 5.*
 > - *Remove the red cube from drawer 2.*
+ 
+The task deliberately captures many of the challenges found in real-world
+warehouse environments. Retrieving or placing a foam cube in a drawer
+resembles storing or picking products while updating an ERP system. The same
+perception, planning, and manipulation pipeline also applies to retail
+(stocking supermarket shelves) and agriculture (harvesting crops in a
+greenhouse). Although simplified, the techniques explored in this project
+generalize to a wide range of robotic applications.
 
 Finally, I share my perspective on the field based on my experience, discussing
 the research directions I find the most promising and the challenges that still
@@ -333,280 +341,85 @@ configurator coordinates all modules for the current task.
 
 ## Project Pipeline
 
-As mentioned earlier the project pipeline will focus on the design and training 
-of the upper body, dual arm, robot. At the end of the project I will briefly 
-mention about the moving base.
+The project focuses primarily on the design and training
+of the robot's upper body (the dual-arm manipulator). I will only briefly touch
+on the mobile base at the end. The project pipeline is:
 
-1. The pipeline will naturally start with the construction of the robot in Fusion360.
-2. I will explain how to obtain a proper robot description file (URDF) 
-from Fusion360 to build a simulation environment (a digital twin of the real 
-robot) in Mujoco and Isaac Sim. 
-3. Use imitation learning to train a base policy. I start in the simulation 
-   environment only (I will start in Mujoco). Starting in Mujoco is good as a 
-   playground and to get a sense of how hard is the problem. It 
-allows to not have to deal wih real robot hardware issues and noise first. On 
-purpose I enumerate some steps that I took that are not necessarly useful to 
-obtain the trained policy at the end, but it allowed me to better understand key 
-   aspects of the problem as well as building a strong intuition behind some of 
-   the SOTA model I will use.
-I will start with a simplified version of the task "Place a randomly positioned 
-   cube in a specifed drawer", with perfect observation-action pairs (no noise, 
-   everything is good). You might then think that the policy will perform well. 
-   Actually not. And this hightlights a very important aspect of the problem that 
-   I will explain deeper later: the importance of failure, a good policy is not a 
-   policiy that can . 
+1. Design the robot in Fusion360.
 
+2. Obtain a proper robot description file (URDF) from Fusion360 and use it to
+   build a simulation environment (a digital twin of the real robot) in MuJoCo
+   and Isaac Sim.
 
-will first start in the simulation environment only. I think 
+3. The fun part: train a base policy using imitation learning.
 
+4. Use reinforcement learning (RL) to fine-tune the base policy in the
+   simulated environment.
 
+Most of the work in this document focuses on step 3. Initially, all policies are
+trained in MuJoCo rather than on the real robot. MuJoCo provides an excellent
+playground to understand how difficult the problem really is without having to
+deal with hardware issues, sensor noise, or broken parts.
 
-```mermaid
-flowchart TD
-    A["1. CAD Modeling<br/>Design the robot in Fusion360."]
-    B["2. Simulation<br/>Validate design and train first policy."]
-    C["3. Real World Fine Tuning<br/>Collect data and fine tune policy."]
-    A --> B --> C
-```
+Some of the intermediate steps presented here are not strictly necessary to
+obtain a working policy. I deliberately include them because they helped me
+develop a much better intuition for the problem and for SOTA models.
 
+Some of the most important concepts covered during policy training are:
 
-- The trajectory problem
-- The importance of failure, so RL
-- The autoregressive failure: the importance of closed loop simulation and testing
-- The importance of embodiment
-- big model and small model
-- The challenge of zero shot learning
-- The importance of inference speed
-- Discuss all metrics that are generally used in robotics to access the goodness
-of a policy (closed loop validation)
+* **The importance of failure recovery.** A good policy is not one that performs
+  one robot step well, but one that remains reliable after thousands of
+  consecutive steps. Robotics is even more autoregressive than LLMs: one bad
+  action at the beginning can leave the robot in a completely different state
+  from the one it was trained on. Throughout the project I use *closed-loop*
+  validation, where the robot executes the entire task using only the policy,
+  and the final success rate is measured. Diverse data, robust models, and
+  reinforcement learning fine-tuning all help the policy recover from its own 
+  mistakes.
 
 
+* **The challenge of embodiment.** Embodiment refers to the idea that an
+  intelligent agent has a physical body through which it perceives and interacts
+  with the world. ChatGPT, for example, has no body. If you connect it to a
+  robot, it must learn how to control that body and interact with the
+  environment. This is one of the main challenges of robotics foundation models:
+  they may have been trained on many different robots, but not on *your* robot.
+  Fine-tuning and reinforcement learning are required for the model to
+  "learn" its own embodiment. I intentionally designed a robot with 15 degrees
+  of freedom that does not resemble existing robots, making embodiment a relevant 
+  challenge.
 
-I purposely made the robot different than traditional robot in order to test
-embodiment (make embodiment more challenging).
 
-Because Diffusion Policy learns a score function (gradient field) over the
-action space rather than a direct mapping, it is significantly better at
-recovering from unexpected physical bumps, obstacles, or displaced objects
-mid-task.
+* **The importance of action prediction.** A single observation can correspond
+  to many valid actions - e.g. an object can be picked from the left or
+  from the right. If the training data contains both strategies, a traditional
+  regression model may predict their average—which could be an invalid action.
+  Policies should learn a distribution over possible actions instead
+  of predicting a single deterministic one.
 
-Because every robot has a different physical body (kinematics, arm length,
-gripper type, joint limits) and camera setup (angles, focal lengths, lighting),
-deploying these models zero-shot on an unseen robot is very difficult and
-usually fails.  1. Do people actually use them "Zero-Shot"?Rarely in practice.
-Zero-shot transfer (placing a model directly onto a totally new robot with zero
-extra training) is still an open research challenge.
 
-When people say a model is a "Generalist" or "Zero-Shot," it usually means
-zero-shot for new objects, new locations, or new natural language instructions
-on a robot body the model has already seen during pretraining.
+* **The importance of planning horizon.** Predicting a chunk of future actions
+  is more effective than predicting only the next action. A robot must
+  understand not only where it should move, but also the intended motion,
+  velocity, and trajectory. These are better captured when the model predicts a
+  sequence of future actions.
 
-What works Zero-Shot: Handing the model a new item (e.g., "pick up the purple
-dinosaur toy") on a standard arm it was trained on (like a Franka Emika Panda or
-Aloha dual-arm).  What breaks Zero-Shot: Putting the model on a different
-hardware setup. If your camera is mounted 15 cm lower, or your gripper moves at
-a different speed, zero-shot performance drops significantly.
 
-If you have a robot that wasn't in the training set (e.g., a custom UR5, xArm,
-or custom 3D-printed arm), you don't use the model zero-shot. Instead, you use
-Few-Shot Fine-Tuning. Like what is done between Dark Forest Labs and Mimic!
+* **The importance of inference speed.** A larger model may achieve higher
+  accuracy, but it is of little practical use if it cannot run at the required
+  control frequency. Large models are well suited for high-level reasoning and
+  long-term planning, while smaller models excel at fast, reactive control.
+  Combining both often provides the best trade-off.
 
-Neither should be considered truly Hepha-compatible zero-shot until an
-embodiment adapter is trained.
+### Robot Description (Upper Body)
 
-hepha_act_100_simple_drawer_5: 82 episodes with 500 tentatives Total 100 episode
-for 646 attends
+The robot's upper body has 15 Degrees of Freedom (DoF): three linear axes
+(x, y, and z) provided by the CNC gantry, and two 6-DoF robotic arms.
 
-Now that I went through the project overview and the main challenges of general
-purpose robotics, let's deep dive into the project:
-
-Video Pre-Training (VLA Models): Pre-train a Vision-Language-Action (VLA) model
-or World Action Model (WAM) on internet-scale video datasets (including human
-everyday videos and video game play logs). This establishes spatial "common
-sense," visual scene understanding, and motion priors.
-
-The safer one is residual RL: final_action = frozen_bc_policy(obs) +
-rl_residual(obs) So ACT/Diffusion gives a reasonable behavior prior, and PPO
-only learns corrections. Behavioral Cloning (BC) almost always happens BEFORE
-Reinforcement Learning (RL).
-
-In standard robotics and simulation pipelines, BC acts as the pre-training
-(warm-start) phase, while RL acts as the fine-tuning phase. Residual RL: A
-pre-trained BC network outputs a base action, while a smaller RL network runs
-concurrently to learn an additive "correction" offset
-($\mathbf{a}_{\text{final}} = \mathbf{a}_{\text{BC}} + \mathbf{a}_{\text{RL}}$).
-
-It’s easy to look at recent advances in Vision-Language-Action (VLA) models and
-Diffusion Policies and think, "If the AI can observe human demos and clone them
-directly, why do we still need physics engines like MuJoCo or Isaac Sim?"
-
-The short answer: A foundation model + BC dataset can teach a robot what to do,
-but without a simulation engine, it has no safe place to learn how not to fail.
-
-Pure BC is inherently open-loop imitation. A simulation engine provides the
-closed-loop feedback, safety sandbox, and synthetic scaling necessary to turn an
-brittle demo mimic into a reliable industrial policy.
-
-In a BC dataset, human teleoperators almost always perform the task
-successfully. They rarely show the robot:
-
-What to do if its hand slips off an object halfway through a grasp.
-
-How to recover if its foot slides 2 centimeters on a slick floor.
-
-How to stabilize itself after a sudden external bump.
-
-Because the policy only saw pristine trajectories during BC, a tiny 1% tracking
-error in frame 10 shifts the robot into an unfamiliar state. In frame 11, it
-makes a bigger error, and by frame 20, it drifts completely off course or
-crashes.
-
-Where Simulation Fits In: You put the BC policy inside a physics simulation,
-intentionally knock it around with random forces, and let RL teach the robot
-error-recovery behaviors across millions of failure cases—without damaging a
-$150, 000 real-world robot. + Infinite Data Augmentations (Domain
-Randomization). Collecting 500 real-world teleop demonstrations takes weeks of
-human effort.
-
-Simulation scales your modest BC dataset into millions of extreme edge-case
-variations overnight.
-
-Real-Time Execution Speed (Simulation as a Safety Guardrail) Large foundation
-models are computationally heavy. Running an 8-Billion parameter VLA model
-directly in an end-to-end control loop on onboard edge compute often yields low
-update rates (e.g., 5 Hz to 10 Hz).
-
-A humanoid balancing or manipulating delicate objects requires high-frequency
-control loops (100 Hz to 1,000 Hz).
-
-The SOTA Setup: The Foundation Model / BC policy runs slowly in the background,
-outputting high-level spatial targets at 5 Hz.
-
-The Sim-Trained RL / Controller: A lightweight policy (trained in simulation)
-runs onboard at 500 Hz, consuming those spatial targets and maintaining
-instantaneous dynamic balance and torque regulation.
-
-Pretrained Backbone: You download a model like OpenVLA or Octo. It already
-understands what a "cup" looks like, what "pick up" means, and basic
-physics/spatial awareness from being trained on ~1,000,000 robot trajectories
-(e.g., the Open X-Embodiment dataset).  Collect 10 to 50 Teleoperated Demos: You
-use a VR controller, leader-follower arm, or space-mouse to teleoperate your
-specific robot doing a task 20–50 times while recording camera feeds and your
-robot's exact joint angles.Parameter-Efficient Fine-Tuning (LoRA): Instead of
-training the entire 7-billion-parameter model from scratch, you freeze the model
-and train a small "adapter" (LoRA).  Result: In 15–30 minutes of training on a
-single GPU, the model adapts its spatial understanding to your exact camera
-placement, lens distortion, and motor response.
-
-Cross-embodiment adaptation is one of the purposes of VLA fine-tuning.
-
-Google Deep Mind Gemini Robotics 2
-
-Genie (Generative Interactive Environments)
-
-PEFT means Parameter-Efficient Fine-Tuning. pipeline uses LoRA, a common PEFT
-method
-
-DDPM: discrete probabilistic denoising steps usually predicts noise or clean
-samples
-
-Flow matching: learns a continuous velocity field integrates an ODE from noise
-to actions
-
-low matching often needs fewer inference iterations. SmolVLA uses this to
-generate action chunks efficiently.
-
-Pretrained SmolVLA vision-language understanding temporal action generation
-original 6D embodiment interface │ ▼ Replace/reconfigure embodiment interface
-for 15D Hepha data │ ▼ Fine-tune action expert with LoRA Fully train
-state/action projection layers │ ▼ 15D Hepha SmolVLA policy
-
-Flow matching is a generative method that teaches the policy how to transform
-random noise into a meaningful action sequence.
-
-Summarize my journey in robotics, discovering the different challenges of AI
-applied to robotics:
-
-With simple BC you get out what you get in: no generalization. IK in purpose to
-show how a "perfect" training data is not suited. The policy simple learn the
-body of the robot and how to make one step right. It knows nothing about long
-term and horizon or the environment. To draw a similar cmoparison
-
-Before the era of Large Language Models (LLMs), Artificial Intelligence in
-Natural Language Processing (NLP) relied almost entirely on task-specific models
-(narrow AI). If you wanted a system to generate poetry, write SQL queries, or
-translate French, you had to design or train separate models for each task using
-small, specialized datasets. A narrow model trained only on a dataset of 50,000
-poems learns isolated structural patterns (rhyme, meter, line breaks). However,
-it lacks a deeper understanding of the world, history, emotional nuance, or
-cross-domain metaphors. The Rule-Based & Statistical Era (1950s – Early 2010s)
-Task-Specific Neural Networks (2013 – 2016) The Architecture Breakthrough &
-Pre-training (2017 – 2018) However, to use BERT for a specific task (like
-sentiment analysis or named entity recognition), developers still had to attach
-a custom task head and fine-tune it on labeled data for that exact task. The
-Shift to Generalist Foundation Models (2018 – Present) OpenAI shifted to
-autoregressive models (decoder-only) focused on predicting the next word. With
-GPT-2 (1.5 billion parameters), researchers noticed an unexpected behavior: when
-a model gets large enough and is trained on enough web data, it can perform
-translation, summarization, and question-answering without any task-specific
-fine-tuning (zero-shot transfer).
-
-Make a comparison diagram between LLMs and robotics
-
-1. Failing is important: deterministic versus noise, world model versus simple
-   BC
-2. ACT verus diffusion: choose the right path? But ACT also
-
-Like when you loose an arm, there is a period of adapation, embodiment, you have
-to train: this is RL. Your perseption of the world does not change, but your
-body did (your world model does not change).
-
-One thing that might stay in the pipeline that is not in LLMs is the RL
-simulation fine tuning / embodiment.
-
-Embodiment is the principle that intelligence, cognition, and learning do not
-happen in an isolated digital void; they emerge from the continuous interaction
-between an agent, its physical or simulated body, and its environment.
-
-Hepha is a substantial embodiment change. SmolVLA was not primarily pretrained
-on this dual-arm gantry configuration. The vision-language backbone can transfer
-object and task understanding, but the 15D coordinated motion must mostly be
-learned from your demonstrations. LoRA is a good baseline, not guaranteed to be
-optimal. For a dramatically different body, I would compare: Current
-configuration: LoRA on the expert and state/action projections. Stronger
-adaptation: LoRA on the VLA, but fully train state_proj, action_in_proj,
-action_out_proj, and action-time projections. Full fine-tuning, if GPU memory
-permits. The official LeRobot interface supports fully training selected modules
-with --peft.full_training_modules. That experiment is especially relevant for
-Hepha.
-
-Pretrained VLA ↓ Target-robot demonstrations (images + language + robot state +
-actions) ↓ Adapt state/action projections to the new robot ↓ LoRA or full
-fine-tuning ↓ Held-out offline validation ↓ Closed-loop simulation/robot
-evaluation ↓ Additional demonstrations or RL refinement
-
-```mermaid
-flowchart TD
-    A["1. CAD Modeling<br/>Design the robot in Fusion360."]
-    B["2. Simulation<br/>Validate design and train first policy."]
-    C["3. Real World Fine Tuning<br/>Collect data and fine tune policy."]
-    A --> B --> C
-```
-
-### Robot Description
-
-The robot has 15 degrees of freedom.
-
-The robot is composed of a CNC part and an upper humanoid body part with servo
-motors.
-
-The CNC part is a CNC machine with stepper motors that I used to play with in
-previous projects:
-
-![Robot overview placeholder](assets/images/robot-overview.svg)
-
-The CNC part allows to place the upper humanoid body part in different work
-positions:
+The CNC gantry is based on an industrial machine equipped with closed-loop servo
+motors that I previously used in other projects. It allows the robot to move
+its arms between different work areas, for example closer to the storage bin or
+closer to the warehouse shelves.
 
 ![CNC positions placeholder](assets/images/cnc-positions.svg)
 
@@ -1349,3 +1162,231 @@ This section is still a work in progress.
 See [references/README.md](references/README.md).
 
 ## Citation
+
+
+
+
+
+
+- The trajectory problem
+- The importance of failure, so RL
+- The autoregressive failure: the importance of closed loop simulation and testing
+- The importance of embodiment
+- big model and small model
+- The challenge of zero shot learning
+- The importance of inference speed
+- Discuss all metrics that are generally used in robotics to access the goodness
+of a policy (closed loop validation)
+
+
+
+I purposely made the robot different than traditional robot in order to test
+embodiment (make embodiment more challenging).
+
+Because Diffusion Policy learns a score function (gradient field) over the
+action space rather than a direct mapping, it is significantly better at
+recovering from unexpected physical bumps, obstacles, or displaced objects
+mid-task.
+
+Because every robot has a different physical body (kinematics, arm length,
+gripper type, joint limits) and camera setup (angles, focal lengths, lighting),
+deploying these models zero-shot on an unseen robot is very difficult and
+usually fails.  1. Do people actually use them "Zero-Shot"?Rarely in practice.
+Zero-shot transfer (placing a model directly onto a totally new robot with zero
+extra training) is still an open research challenge.
+
+When people say a model is a "Generalist" or "Zero-Shot," it usually means
+zero-shot for new objects, new locations, or new natural language instructions
+on a robot body the model has already seen during pretraining.
+
+What works Zero-Shot: Handing the model a new item (e.g., "pick up the purple
+dinosaur toy") on a standard arm it was trained on (like a Franka Emika Panda or
+Aloha dual-arm).  What breaks Zero-Shot: Putting the model on a different
+hardware setup. If your camera is mounted 15 cm lower, or your gripper moves at
+a different speed, zero-shot performance drops significantly.
+
+If you have a robot that wasn't in the training set (e.g., a custom UR5, xArm,
+or custom 3D-printed arm), you don't use the model zero-shot. Instead, you use
+Few-Shot Fine-Tuning. Like what is done between Dark Forest Labs and Mimic!
+
+Neither should be considered truly Hepha-compatible zero-shot until an
+embodiment adapter is trained.
+
+hepha_act_100_simple_drawer_5: 82 episodes with 500 tentatives Total 100 episode
+for 646 attends
+
+Now that I went through the project overview and the main challenges of general
+purpose robotics, let's deep dive into the project:
+
+Video Pre-Training (VLA Models): Pre-train a Vision-Language-Action (VLA) model
+or World Action Model (WAM) on internet-scale video datasets (including human
+everyday videos and video game play logs). This establishes spatial "common
+sense," visual scene understanding, and motion priors.
+
+The safer one is residual RL: final_action = frozen_bc_policy(obs) +
+rl_residual(obs) So ACT/Diffusion gives a reasonable behavior prior, and PPO
+only learns corrections. Behavioral Cloning (BC) almost always happens BEFORE
+Reinforcement Learning (RL).
+
+In standard robotics and simulation pipelines, BC acts as the pre-training
+(warm-start) phase, while RL acts as the fine-tuning phase. Residual RL: A
+pre-trained BC network outputs a base action, while a smaller RL network runs
+concurrently to learn an additive "correction" offset
+($\mathbf{a}_{\text{final}} = \mathbf{a}_{\text{BC}} + \mathbf{a}_{\text{RL}}$).
+
+It’s easy to look at recent advances in Vision-Language-Action (VLA) models and
+Diffusion Policies and think, "If the AI can observe human demos and clone them
+directly, why do we still need physics engines like MuJoCo or Isaac Sim?"
+
+The short answer: A foundation model + BC dataset can teach a robot what to do,
+but without a simulation engine, it has no safe place to learn how not to fail.
+
+Pure BC is inherently open-loop imitation. A simulation engine provides the
+closed-loop feedback, safety sandbox, and synthetic scaling necessary to turn an
+brittle demo mimic into a reliable industrial policy.
+
+In a BC dataset, human teleoperators almost always perform the task
+successfully. They rarely show the robot:
+
+What to do if its hand slips off an object halfway through a grasp.
+
+How to recover if its foot slides 2 centimeters on a slick floor.
+
+How to stabilize itself after a sudden external bump.
+
+Because the policy only saw pristine trajectories during BC, a tiny 1% tracking
+error in frame 10 shifts the robot into an unfamiliar state. In frame 11, it
+makes a bigger error, and by frame 20, it drifts completely off course or
+crashes.
+
+Where Simulation Fits In: You put the BC policy inside a physics simulation,
+intentionally knock it around with random forces, and let RL teach the robot
+error-recovery behaviors across millions of failure cases—without damaging a
+$150, 000 real-world robot. + Infinite Data Augmentations (Domain
+Randomization). Collecting 500 real-world teleop demonstrations takes weeks of
+human effort.
+
+Simulation scales your modest BC dataset into millions of extreme edge-case
+variations overnight.
+
+Real-Time Execution Speed (Simulation as a Safety Guardrail) Large foundation
+models are computationally heavy. Running an 8-Billion parameter VLA model
+directly in an end-to-end control loop on onboard edge compute often yields low
+update rates (e.g., 5 Hz to 10 Hz).
+
+A humanoid balancing or manipulating delicate objects requires high-frequency
+control loops (100 Hz to 1,000 Hz).
+
+The SOTA Setup: The Foundation Model / BC policy runs slowly in the background,
+outputting high-level spatial targets at 5 Hz.
+
+The Sim-Trained RL / Controller: A lightweight policy (trained in simulation)
+runs onboard at 500 Hz, consuming those spatial targets and maintaining
+instantaneous dynamic balance and torque regulation.
+
+Pretrained Backbone: You download a model like OpenVLA or Octo. It already
+understands what a "cup" looks like, what "pick up" means, and basic
+physics/spatial awareness from being trained on ~1,000,000 robot trajectories
+(e.g., the Open X-Embodiment dataset).  Collect 10 to 50 Teleoperated Demos: You
+use a VR controller, leader-follower arm, or space-mouse to teleoperate your
+specific robot doing a task 20–50 times while recording camera feeds and your
+robot's exact joint angles.Parameter-Efficient Fine-Tuning (LoRA): Instead of
+training the entire 7-billion-parameter model from scratch, you freeze the model
+and train a small "adapter" (LoRA).  Result: In 15–30 minutes of training on a
+single GPU, the model adapts its spatial understanding to your exact camera
+placement, lens distortion, and motor response.
+
+Cross-embodiment adaptation is one of the purposes of VLA fine-tuning.
+
+Google Deep Mind Gemini Robotics 2
+
+Genie (Generative Interactive Environments)
+
+PEFT means Parameter-Efficient Fine-Tuning. pipeline uses LoRA, a common PEFT
+method
+
+DDPM: discrete probabilistic denoising steps usually predicts noise or clean
+samples
+
+Flow matching: learns a continuous velocity field integrates an ODE from noise
+to actions
+
+low matching often needs fewer inference iterations. SmolVLA uses this to
+generate action chunks efficiently.
+
+Pretrained SmolVLA vision-language understanding temporal action generation
+original 6D embodiment interface │ ▼ Replace/reconfigure embodiment interface
+for 15D Hepha data │ ▼ Fine-tune action expert with LoRA Fully train
+state/action projection layers │ ▼ 15D Hepha SmolVLA policy
+
+Flow matching is a generative method that teaches the policy how to transform
+random noise into a meaningful action sequence.
+
+Summarize my journey in robotics, discovering the different challenges of AI
+applied to robotics:
+
+With simple BC you get out what you get in: no generalization. IK in purpose to
+show how a "perfect" training data is not suited. The policy simple learn the
+body of the robot and how to make one step right. It knows nothing about long
+term and horizon or the environment. To draw a similar cmoparison
+
+Before the era of Large Language Models (LLMs), Artificial Intelligence in
+Natural Language Processing (NLP) relied almost entirely on task-specific models
+(narrow AI). If you wanted a system to generate poetry, write SQL queries, or
+translate French, you had to design or train separate models for each task using
+small, specialized datasets. A narrow model trained only on a dataset of 50,000
+poems learns isolated structural patterns (rhyme, meter, line breaks). However,
+it lacks a deeper understanding of the world, history, emotional nuance, or
+cross-domain metaphors. The Rule-Based & Statistical Era (1950s – Early 2010s)
+Task-Specific Neural Networks (2013 – 2016) The Architecture Breakthrough &
+Pre-training (2017 – 2018) However, to use BERT for a specific task (like
+sentiment analysis or named entity recognition), developers still had to attach
+a custom task head and fine-tune it on labeled data for that exact task. The
+Shift to Generalist Foundation Models (2018 – Present) OpenAI shifted to
+autoregressive models (decoder-only) focused on predicting the next word. With
+GPT-2 (1.5 billion parameters), researchers noticed an unexpected behavior: when
+a model gets large enough and is trained on enough web data, it can perform
+translation, summarization, and question-answering without any task-specific
+fine-tuning (zero-shot transfer).
+
+Make a comparison diagram between LLMs and robotics
+
+1. Failing is important: deterministic versus noise, world model versus simple
+   BC
+2. ACT verus diffusion: choose the right path? But ACT also
+
+Like when you loose an arm, there is a period of adapation, embodiment, you have
+to train: this is RL. Your perseption of the world does not change, but your
+body did (your world model does not change).
+
+One thing that might stay in the pipeline that is not in LLMs is the RL
+simulation fine tuning / embodiment.
+
+Embodiment is the principle that intelligence, cognition, and learning do not
+happen in an isolated digital void; they emerge from the continuous interaction
+between an agent, its physical or simulated body, and its environment.
+
+Hepha is a substantial embodiment change. SmolVLA was not primarily pretrained
+on this dual-arm gantry configuration. The vision-language backbone can transfer
+object and task understanding, but the 15D coordinated motion must mostly be
+learned from your demonstrations. LoRA is a good baseline, not guaranteed to be
+optimal. For a dramatically different body, I would compare: Current
+configuration: LoRA on the expert and state/action projections. Stronger
+adaptation: LoRA on the VLA, but fully train state_proj, action_in_proj,
+action_out_proj, and action-time projections. Full fine-tuning, if GPU memory
+permits. The official LeRobot interface supports fully training selected modules
+with --peft.full_training_modules. That experiment is especially relevant for
+Hepha.
+
+Pretrained VLA ↓ Target-robot demonstrations (images + language + robot state +
+actions) ↓ Adapt state/action projections to the new robot ↓ LoRA or full
+fine-tuning ↓ Held-out offline validation ↓ Closed-loop simulation/robot
+evaluation ↓ Additional demonstrations or RL refinement
+
+```mermaid
+flowchart TD
+    A["1. CAD Modeling<br/>Design the robot in Fusion360."]
+    B["2. Simulation<br/>Validate design and train first policy."]
+    C["3. Real World Fine Tuning<br/>Collect data and fine tune policy."]
+    A --> B --> C
+```
