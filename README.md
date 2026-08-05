@@ -353,29 +353,27 @@ on the mobile base at the end. The project pipeline is:
 
 3. The fun part: train a base policy using imitation learning.
 
-4. Use reinforcement learning (RL) to fine-tune the base policy in the
-   simulated environment.
+4. Use RL to fine-tune the base policy in the simulated environment.
 
 Most of the work in this document focuses on step 3. Initially, all policies are
 trained in MuJoCo rather than on the real robot. MuJoCo provides an excellent
 playground to understand how difficult the problem really is without having to
 deal with hardware issues, sensor noise, or broken parts.
 
-Some of the intermediate steps presented here are not strictly necessary to
+Some of the intermediate steps presented here are not necessary to
 obtain a working policy. I deliberately include them because they helped me
 develop a much better intuition for the problem and for SOTA models.
 
-Some of the most important concepts covered during policy training are:
+Important concepts covered during policy training are:
 
 * **The importance of failure recovery.** A good policy is not one that performs
-  one robot step well, but one that remains reliable after thousands of
+  the next step well, but one that remains reliable after thousands of
   consecutive steps. Robotics is even more autoregressive than LLMs: one bad
   action at the beginning can leave the robot in a completely different state
   from the one it was trained on. Throughout the project I use *closed-loop*
   validation, where the robot executes the entire task using only the policy,
   and the final success rate is measured. Diverse data, robust models, and
-  reinforcement learning fine-tuning all help the policy recover from its own 
-  mistakes.
+  RL fine-tuning all help the policy recover from its own mistakes.
 
 
 * **The challenge of embodiment.** Embodiment refers to the idea that an
@@ -384,7 +382,7 @@ Some of the most important concepts covered during policy training are:
   robot, it must learn how to control that body and interact with the
   environment. This is one of the main challenges of robotics foundation models:
   they may have been trained on many different robots, but not on *your* robot.
-  Fine-tuning and reinforcement learning are required for the model to
+  Fine-tuning of the foundation model is required for the model to
   "learn" its own embodiment. I intentionally designed a robot with 15 degrees
   of freedom that does not resemble existing robots, making embodiment a relevant 
   challenge.
@@ -393,9 +391,9 @@ Some of the most important concepts covered during policy training are:
 * **The importance of action prediction.** A single observation can correspond
   to many valid actions - e.g. an object can be picked from the left or
   from the right. If the training data contains both strategies, a traditional
-  regression model may predict their average—which could be an invalid action.
-  Policies should learn a distribution over possible actions instead
-  of predicting a single deterministic one.
+  regression model may predict their average—which could be an invalid action. 
+  Policies should learn a distribution over possible actions given an observation,
+  $p(a \mid o)$, rather than predicting a single deterministic action.
 
 
 * **The importance of planning horizon.** Predicting a chunk of future actions
@@ -416,66 +414,53 @@ Some of the most important concepts covered during policy training are:
 The robot's upper body has 15 Degrees of Freedom (DoF): three linear axes
 (x, y, and z) provided by the CNC gantry, and two 6-DoF robotic arms.
 
-The CNC gantry is based on an industrial machine equipped with closed-loop servo
-motors that I previously used in other projects. It allows the robot to move
-its arms between different work areas, for example closer to the storage bin or
-closer to the warehouse shelves.
+The CNC gantry is equipped with closed-loop servo motors that I reused from 
+another personal project. It allows the robot to move its arms between different 
+work areas: closer to the collector or closer to the warehouse shelves.
 
-![CNC positions placeholder](assets/images/cnc-positions.svg)
+**TODO:** add two images of the robot in two work position
 
-### Task Description
+### Task Description (Upper Body)
 
-The task resembles a realistic robot task in a warehouse-like environment. Here
-I call "warehouse-like environment" any environment composed of zones where
+As mentioned earlier, the task is: 
+
+> *Given a user's request, place or remove a foam cube in the correct warehouse
+> drawer.*
+
+The task resembles a realistic robot task in a warehouse-like environment. I call 
+*warehouse-like environment* any environment composed of zones where
 robots maneuver and zones where products are stored, placed, or picked from.
 Examples are traditional warehouses, supermarkets, pharmacies, greenhouses, or
 even vineyards.
 
-A robot would navigate in the environment and use its robotic arm to place
+The robot would navigate in the environment and use its arms to place
 objects into storage, or remove objects from storage.
 
-For brevity, this report will not discuss autonomous navigation in the
-warehouse-like environment, as this does not necessarily require a machine
-learning model. If you are curious, the robot base for navigation looks like
-this:
+I will not discuss autonomous navigation in the warehouse-like environment, as this 
+does not necessarily require a ML model. If you are curious, the real robot base for 
+navigation looks like this:
 
-![Mobile base placeholder](assets/images/mobile-base.svg)
+**TODO:** add GIFS of the robot base moving
 
-In what follows, I will assume the task happens in a traditional warehouse
-composed of drawers, with objects to place into or remove from the drawers.
+In humanoid robot design, not using legs but an Autonomous Mobile Robot (AMR) is 
+an approach also taken by [Genesis AI](https://www.genesis.ai/). It greatly 
+simplifies the problem while preserving most of the robot's capabilities.
 
-You can generalize this task to many use cases. In a greenhouse, it could mean
-placing seeds or harvesting a product from a rack. In a supermarket, it could
-mean placing products on a shelf, but not removing them, since this is done by
-customers.
+**TODO:** add GIFS of Genesis AI robot
 
-For simplicity, I purposely chose not to focus on the upper part of the humanoid
-robot and not on the legs at the moment. This is an approach also used by
-Genesis AI (**TODO:** add video).
+## Step 1: Model The Robot CAD
 
-All in all, the task description is:
-
-> Given a request from the user to place or remove a product in or from a
-> warehouse, the robot should move its body and arms to perform the task, where:
->
-> 1. I use a foam cube to represent the product for simplicity.
-> 2. I use a stack of drawers to mimic warehouse racks.
-
-## Step 1: CAD Modeling
-
-Before building anything, I construct a 3D model of the robot.
+First, I construct the 3D model of the robot.
 
 This is required to validate the design, 3D print the robot, and build the
 simulation environment in MuJoCo and Isaac Sim.
 
-For this I use Fusion360.
-
-![CAD model placeholder](assets/images/cad-model.svg)
+I use [Fusion360](https://www.autodesk.com/products/fusion-360/overview).
 
 The path to the CAD project is **TODO**.
 
 Each component is modeled as an assembly, possibly made of several
-sub-components:
+subcomponents:
 
 ```text
 hepha-robot-cad
@@ -499,103 +484,129 @@ hepha-robot-cad
 └── storage_bin
 ```
 
+The structure of the Fusion360 assembly is very important because the
+requirements for 3D printing and URDF export are different.
+
+* Rule 1 (3D printing): each physical part should be its own assembly
+  (although your assembly can be nested to keep the project organized). It's
+  the conventional structure used in CAD projects, as shown above.
+
+* Rule 2 (URDF export): the assembly hierarchy must instead follow the
+  robot's kinematic tree: each movable link should be represented by a
+  separate assembly. For example, the left shoulder link is one assembly, the
+  left upper arm another, and so on, connected by revolute or linear joints.
+  I describe this structure in the next section.
+
+Because these two hierarchies serve different purposes and are organized 
+differently, I maintain two separate Fusion360 projects.
+
 **TODO:** add GIF of the CAD.
 
-![CAD GIF placeholder](assets/gifs/cad-preview.svg)
+The robot components were 3D printed and assembled, for both the leader and follower.
+Since I do not have a CNC machine for the leader, I used a controller to
+lead the CNC follower.
 
-From this CAD, the robot components were 3D printed and assembled, both for the
-leader and follower.
+**TODO:** add GIF of the real robot with the leader and follower.
 
-Since I do not have a CNC machine for the leader, I will use a controller to
-lead the CNC follower as explained later.
+## Step 2: Build The Simulation Environment
 
-**TODO:** add GIF of the real robot.
+Building a simulation environment with a digital twin of the robot is essential 
+to validate the hardware and train RL policies. I will try both MuJoCo and Isaac Sim 
+and compare the two.
 
-![Real robot GIF placeholder](assets/gifs/real-robot.svg)
+### From CAD to URDF
 
-How Models Bridge the Hardware GapTo make transfer as easy as possible, these
-models use specific tricks to abstract away hardware differences:Action Space
-Normalization: Models rarely predict raw motor voltages or specific joint
-angles. Instead, they output End-Effector Delta Poses ($\Delta x, \Delta y,
-\Delta z, \Delta \text{roll}, \Delta \text{pitch}, \Delta \text{yaw},
-\text{gripper status}$).Why this helps: "Move 2cm left and close the claw" is
-universally understood, whether your robot has 6 joints, 7 joints, or linear
-actuators.Inverted Kinematics (IK): The model tells your robot where the hand
-should go in 3D space ($\Delta xyz$), and your local robot controller uses IK to
-figure out what joint movements are required.Camera Normalization: Cameras are
-typically resized and normalized to fixed resolutions (e.g., 224x224 RGB) so the
-visual backend can process them regardless of the camera model.
+To create a robot description file that can be used by simulators, I use the
+Fusion360 plugin `ACDC4Robotics` to convert the CAD model into a `.urdf` file.
+A `.urdf` file describes the robot: it contains not only the visual meshes of
+its components, but also the joints between them, inertial properties, centers
+of mass, friction parameters, and other information required to build a
+realistic simulation.
 
-## Step 2: Simulation And Benchmark Policy
+To use `ACDC4Robotics`, I had to transform my original
+`hepha-robot-cad` project into a new project called `hepha-robot-sim`.
+You can find it at **TODO:** add path.
 
-As mentioned above, the lack of data is one of the two main challenges in
-general purpose robotics. For this reason, and also to validate the hardware, I
-first built a simulation of the robot that I designed. I will try both MuJoCo
-from DeepMind and Isaac Sim from Nvidia to compare the two.
+In the CAD project, components are organized as physical robot parts. In the
+simulation project, they must instead follow the robot's kinematic tree: one
+component per **link**, with exactly one body inside each link component.
+
+```text
+hepha-robot-sim
+├── cnc_x_link
+├── cnc_y_link
+├── shoulder_l_link
+├── shoulder_r_link
+├── forearm_l_link
+├── forearm_r_link
+├── arm_l_link
+├── arm_r_link
+├── wrist_l_link
+├── wrist_r_link
+├── hand_l_link
+├── hand_r_link
+├── finger_l_link
+├── finger_r_link
+├── drawer_1_link
+├── drawer_2_link
+├── drawer_3_link
+├── drawer_4_link
+├── drawer_5_link
+├── drawer_6_link
+├── drawer_7_link
+├── drawer_8_link
+├── drawer_9_link
+└── head_link
+```
+
+To create this new hierarchy, I first created an empty component for every
+link. I then copied the relevant bodies into their corresponding link
+components, combined them into a single body using Fusion360's `combine` tool,
+and finally created the joints between the links (`revolute` or `slider`).
+
+**TODO**: GIFS of the simulated robot
 
 ### MuJoCo
 
-A Gym-style environment in robotics refers to a standardized Python interface
-used to train autonomous agents via Reinforcement Learning (RL).
+MuJoCo is one of the most widely used physics simulators in robotics research.
+It is easy to install, has a relatively low learning curve, and is
+computationally efficient while still providing accurate physics simulation.
+Unlike Isaac Sim, MuJoCo runs well on a local machine without requiring a GPU.
+Its main drawback is that it does not produce photorealistic renderings, which
+can be important for vision-based robot policies.
 
-MuJoCo is widely used in research. It is very easy to install and has a low
-learning curve. It is known to be computationally efficient for physics
-simulation, while still simulating robot dynamics accurately. You can run it on
-your local machine, while Isaac Sim requires GPUs. One important drawback of
-MuJoCo compared with Isaac Sim is that it does not produce photorealistic
-rendering. This can be useful when the model requires camera frames as input
-(which is the case for humanoid robot models).
+The `.mjcf` file generated in the previous section only defines the robot's
+visual meshes and joints. To obtain a physically realistic simulation, I also
+needed to add collision geometries.
 
-#### From CAD To Robot Description
+In MuJoCo, visual meshes are only used for rendering. The physics engine instead
+relies on simpler collision geometries (boxes, spheres, cylinders, etc.), which
+are much faster and more numerically stable than arbitrary triangle meshes.
 
-To create the MuJoCo simulation, I will use the Fusion360 plugin called
-`ACDC4Robotics` to transform a CAD representation into `.urdf`, or even into an
-`.mjcf` file specific to MuJoCo. These are robot description files. They contain
-not only the visual meshes of the components, but also the joint information
-between robot components, inertia, friction, center of mass, etc. All of this is
-required to produce a simulation faithful to reality.
+For each link in my `hepha-robot-sim` project, I created a simplified `.step`
+file made only of primitive boxes. I then wrote a small Python script to convert
+these files into the corresponding MJCF collision geometries.
 
-To use `ACDC4Robotics`, I had to transform my original `hepha-robot-cad` project
-into a new project called `hepha-robot-sim`.
+Finally, I ensured that the robot had realistic joint limits, centers of mass,
+and inertia before running the simulation.
 
-In the CAD project, components are organized like robot parts. In the simulation
-project, they need to be organized like robot links: one component per link, and
-only one body inside each link component.
+**TODO:** add path to the collision `.step` files.
 
-To do this, I first created an empty component for each link. Then I copied the
-relevant bodies into each link component, combined them into a single body, and
-finally added the correct joint between the links, either `slider` or
-`revolute`.
+**TODO:** add GIF showing the collision geometries.
 
-**TODO:** add path to the `hepha-robot-sim` file.
+## Step 3: Base Policy Training
 
-![MuJoCo visual placeholder](assets/images/mujoco-visual.svg)
+
+
+## Step 4: RL Fine Tuning
+
+
+
+
 
 #### Collision Geometries
 
-The `.mjcf` file from the previous section only gives me visual mesh geometries
-with controllable joints. To obtain a physically realistic robot, I also need to
-activate physical collisions.
 
-In MuJoCo, visual meshes are only used for visualization. The collision engine
-instead uses coarser and simpler geometries, which are faster and more
-numerically stable than arbitrary triangle meshes. These collision geometries
-are usually made from MuJoCo primitives such as boxes, spheres, and cylinders.
-
-For each link in my updated Fusion360 `hepha-robot-sim` project, I had to create
-a coarse `.step` file made of primitive geometries. I decided to use only boxes.
-I then wrote a simple Python script to transform these `.step` files, made from
-simple Fusion360 extrusions, into an MJCF description of primitive box
-geometries.
-
-I also made sure to have realistic center of mass and inertia in the final
-`.mjcf` robot description file.
-
-**TODO:** add path of the collision `.step` files.
-
-**TODO:** add GIF with collision geometries.
-
-![Collision geometries GIF placeholder](assets/gifs/collision-geometries.svg)
 
 #### Recording Episodes In Simulation
 
@@ -631,14 +642,23 @@ scratch.
 
 **TODO:** add GIF of episodes.
 
-![MuJoCo episode placeholder](assets/gifs/mujoco-episode.svg)
-
 Before the start of each episode, I randomize the position and orientation of
 the cube, the colors of the geometries, and add a bit of noise to the camera
 position and orientation between episodes for better generalization.
 
 Episodes are stored as a Hugging Face dataset using LeRobot's dataset format,
 also used by Nvidia and many robotics companies.
+
+
+
+
+
+
+
+
+
+
+
 
 #### Training The Policy
 
@@ -1390,3 +1410,17 @@ flowchart TD
     C["3. Real World Fine Tuning<br/>Collect data and fine tune policy."]
     A --> B --> C
 ```
+
+How Models Bridge the Hardware GapTo make transfer as easy as possible, these
+models use specific tricks to abstract away hardware differences:Action Space
+Normalization: Models rarely predict raw motor voltages or specific joint
+angles. Instead, they output End-Effector Delta Poses ($\Delta x, \Delta y,
+\Delta z, \Delta \text{roll}, \Delta \text{pitch}, \Delta \text{yaw},
+\text{gripper status}$).Why this helps: "Move 2cm left and close the claw" is
+universally understood, whether your robot has 6 joints, 7 joints, or linear
+actuators.Inverted Kinematics (IK): The model tells your robot where the hand
+should go in 3D space ($\Delta xyz$), and your local robot controller uses IK to
+figure out what joint movements are required.Camera Normalization: Cameras are
+typically resized and normalized to fixed resolutions (e.g., 224x224 RGB) so the
+visual backend can process them regardless of the camera model.
+
