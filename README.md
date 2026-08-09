@@ -1,5 +1,17 @@
 # Hepha
 
+TODO:
+
+- CAD of camera holding and drawers = should finish drawers
+- Check ACT policy running a lot faster
+- Run flow matching
+- Run VLA policy
+- Try RL
+
+
+"I used to fork LeRobot repository but with AI I can easily create a new repo 
+with only features of LeRobot that I am interested in"
+
 This document presents *Hepha*, a robotics project where I build and train a 
 bimanual robot moving in a warehouse environment.
 
@@ -388,12 +400,24 @@ Important concepts covered during policy training are:
   challenge.
 
 
-* **The importance of action prediction.** A single observation can correspond
+* **The multimodality problem.** A single observation can correspond
   to many valid actions - e.g. an object can be picked from the left or
   from the right. If the training data contains both strategies, a traditional
   regression model may predict their average—which could be an invalid action. 
   Policies should learn a distribution over possible actions given an observation,
-  $p(a \mid o)$, rather than predicting a single deterministic action.
+  $p(a \mid o)$, rather than predicting a single deterministic action. Gen AI 
+  can be a solution. Target distribution that have different modes.For example a 
+  simple MSE would optimize to predict the mean of the data. MAE is lot better 
+  than MSE. VQ-BeT avoids this by turning continuous actions into discrete tokens, much
+like language models turn text into tokens.Because classification solves the 
+  problem = this naturally models multiple valid behaviors.
+Unlike ACT, there is no CVAE latent variable.
+Unlike Diffusion Policy, there is no denoising process. Diffusion model the whole 
+  distribution rather than doing point prediction.
+Diffusion: "Learn how to gradually remove noise."
+Flow Matching: "Learn the velocity field that transports noise into data."
+Robot when predicting chunks can go left then right, left then right, .... Realt 
+  Time Action Chunking with Large Models
 
 
 * **The importance of planning horizon.** Predicting a chunk of future actions
@@ -401,13 +425,18 @@ Important concepts covered during policy training are:
   understand not only where it should move, but also the intended motion,
   velocity, and trajectory. These are better captured when the model predicts a
   sequence of future actions.
-
+The action distribution in robotics versus LLMs is very different: actions are 
+  very correlated, sometimes sequence of actions that are the same, etc. Which 
+  might make the model always predict the same action.
 
 * **The importance of inference speed.** A larger model may achieve higher
   accuracy, but it is of little practical use if it cannot run at the required
   control frequency. Large models are well suited for high-level reasoning and
   long-term planning, while smaller models excel at fast, reactive control.
   Combining both often provides the best trade-off.
+System 1 and system 2 from Daniel Kahneman. See Gemini Robotics paper from Google 
+  or Pi0.5 from Physicall Intelligence or Gr00t model from Nvidia.
+Real word manipulation and embodiment data would be great new data for LLMs.
 
 ### Robot Description (Upper Body)
 
@@ -438,7 +467,8 @@ objects into storage, or remove objects from storage.
 
 I will not discuss autonomous navigation in the warehouse-like environment, as this 
 does not necessarily require a ML model. If you are curious, the real robot base for 
-navigation looks like this:
+navigation looks like this (it should use omniwheels in some settings or 
+mechanical wheels):
 
 **TODO:** add GIFS of the robot base moving
 
@@ -510,6 +540,8 @@ lead the CNC follower.
 
 ## Step 2: Build The Simulation Environment
 
+Tell that you used IK to see if everything works in the environment.
+
 Building a simulation environment with a digital twin of the robot is essential 
 to validate the hardware and train RL policies. I will try both MuJoCo and Isaac Sim 
 and compare the two.
@@ -573,28 +605,61 @@ It is easy to install, has a relatively low learning curve, and is
 computationally efficient while still providing accurate physics simulation.
 Unlike Isaac Sim, MuJoCo runs well on a local machine without requiring a GPU.
 Its main drawback is that it does not produce photorealistic renderings, which
-can be important for vision-based robot policies.
+can be important for vision-based robot policies (like for humanoid robots).
 
-The `.mjcf` file generated in the previous section only defines the robot's
-visual meshes and joints. To obtain a physically realistic simulation, I also
-needed to add collision geometries.
+The `.urdf` file generated in the previous section only defines the robot's
+visual meshes and joints. Since visual meshes are only used for rendering, I
+also needed to define collision geometries to obtain a physically realistic
+simulation.
 
-In MuJoCo, visual meshes are only used for rendering. The physics engine instead
-relies on simpler collision geometries (boxes, spheres, cylinders, etc.), which
-are much faster and more numerically stable than arbitrary triangle meshes.
-
-For each link in my `hepha-robot-sim` project, I created a simplified `.step`
-file made only of primitive boxes. I then wrote a small Python script to convert
-these files into the corresponding MJCF collision geometries.
+MuJoCo's physics engine relies on simple primitive geometries (boxes, spheres,
+cylinders, etc.) for collision detection, as they are much faster and more
+numerically stable than arbitrary triangle meshes. For each link in my
+`hepha-robot-sim` project, I therefore created a simplified `.step` file made
+only of primitive boxes. I then wrote a small Python script to convert these
+files into the corresponding MJCF collision geometries.
 
 Finally, I ensured that the robot had realistic joint limits, centers of mass,
 and inertia before running the simulation.
 
 **TODO:** add path to the collision `.step` files.
 
+**TODO:** add path to the final `.urdf` file.
+
 **TODO:** add GIF showing the collision geometries.
 
+### Isaac Sim
+
+
+
 ## Step 3: Base Policy Training
+
+First, define the metrics
+
+- importance of failure recovery: act on simplified data + importance of planning 
+  horizon with act
+- challenge of embodiment: explain how to fine tune the foundation model + 
+  importance of inference speed
+
+ACT simple
+
+Foundation simple
+
+Act random
+
+Diffusion random
+
+Foundation 0 random 
+
+Foundation 1 random
+
+With BC real robot
+
+RL fine tuning 
+
+Final demo
+
+metrics: closed loop validation, achievement: grasped cube, ...
 
 
 

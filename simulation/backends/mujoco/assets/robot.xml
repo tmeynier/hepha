@@ -1,0 +1,416 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="hepha-robot-cad">
+    <compiler angle="radian" autolimits="true" />
+    <option timestep="0.002" integrator="implicitfast" cone="elliptic" impratio="10" gravity="0 0 -9.81" />
+    <statistic center="-0.15 -0.05 0.35" extent="1.5" />
+    <visual>
+        <headlight diffuse="0.6 0.6 0.6" ambient="0.25 0.25 0.25" specular="0.1 0.1 0.1" />
+        <rgba haze="0.15 0.18 0.22 1" />
+        <global azimuth="135" elevation="-25" />
+    </visual>
+    <default>
+        <!-- Conservative transfer baseline. Replace these values with identified hardware parameters. -->
+        <joint damping="1.5" armature="0.02" frictionloss="0.05" />
+        <geom contype="0" conaffinity="0" friction="1.0 0.05 0.001" solimp="0.9 0.95 0.001" solref="0.02 1" />
+        <position kp="250" dampratio="1" forcerange="-120 120" />
+    </default>
+    <asset>
+        <mesh name="base_link" file="meshes/base_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="cnc_x_link" file="meshes/cnc_x_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="cnc_y_link" file="meshes/cnc_y_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="shoulder_l_link" file="meshes/shoulder_l_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="shoulder_r_link" file="meshes/shoulder_r_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="head_link" file="meshes/head_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="forearm_l_link" file="meshes/forearm_l_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="forearm_r_link" file="meshes/forearm_r_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="arm_l_link" file="meshes/arm_l_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="arm_r_link" file="meshes/arm_r_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wrist_l_link" file="meshes/wrist_l_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wrist_r_link" file="meshes/wrist_r_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="hand_l_link" file="meshes/hand_l_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="hand_r_link" file="meshes/hand_r_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="finger_l_link" file="meshes/finger_l_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="finger_r_link" file="meshes/finger_r_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="drawer_1_link" file="meshes/drawer_1_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="drawer_2_link" file="meshes/drawer_2_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="drawer_3_link" file="meshes/drawer_3_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="drawer_4_link" file="meshes/drawer_4_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="drawer_5_link" file="meshes/drawer_5_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="drawer_6_link" file="meshes/drawer_6_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="drawer_7_link" file="meshes/drawer_7_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="drawer_8_link" file="meshes/drawer_8_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="drawer_9_link" file="meshes/drawer_9_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="cube_link" file="meshes/cube_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="rack_structure_link" file="meshes/rack_structure_link.stl" scale="0.001 0.001 0.001" />
+        <mesh name="storage_bin_link" file="meshes/storage_bin_link.stl" scale="0.001 0.001 0.001" />
+    </asset>
+    <worldbody>
+        <light directional="true" pos="-0.5 0.5 3" dir="0 0 -1" />
+        <geom name="floor" pos="0 0 0" size="1 1 1" type="plane" rgba="1 0.83 0.61 0.5" contype="1" conaffinity="1" />
+        <camera name="front" pos="1.3 -1.6 1.1" xyaxes="0.78 0.63 0 -0.31 0.38 0.87" />
+        <camera name="side" pos="-1.7 -0.4 0.9" xyaxes="0.23 -0.97 0 0.45 0.11 0.89" />
+        <camera name="top" pos="-0.15 -0.05 2.1" xyaxes="1 0 0 0 1 0" />
+        <body name="base_link" pos="0.0 0.0 0.0" euler="-0.0 0.0 -0.0">
+            <geom name="base_link_geom" type="mesh" mesh="base_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+            <geom name="base_link_collision_box_01_geom" type="box" pos="0 0 0.01" size="0.45 0.6 0.01" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+            <geom name="base_link_collision_box_02_geom" type="box" pos="0.325 0.455 0.1725" size="0.05 0.055 0.1525" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+            <geom name="base_link_collision_box_03_geom" type="box" pos="0.325 0.115 0.1725" size="0.05 0.055 0.1525" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+            <geom name="base_link_collision_box_04_geom" type="box" pos="-0.325 0.455 0.1725" size="0.05 0.055 0.1525" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+            <geom name="base_link_collision_box_05_geom" type="box" pos="-0.325 0.115 0.1725" size="0.05 0.055 0.1525" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+            <geom name="base_link_collision_box_06_geom" type="box" pos="0.325 0.285 0.28" size="0.05 0.31 0.045" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+            <geom name="base_link_collision_box_07_geom" type="box" pos="-0.325 0.285 0.28" size="0.05 0.31 0.045" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+            <body name="rack_structure_link" pos="0 0 0" euler="0 0 0">
+                <geom name="rack_structure_link_geom" type="mesh" mesh="rack_structure_link" pos="0 0 0" euler="0 0 0" rgba="0.45 0.75 1 1" group="1" contype="0" conaffinity="0" />
+                <geom name="rack_structure_link_collision_box_01_geom" type="box" pos="-0.00525780958829 -0.372275657359 0.267625" size="0.1875 0.06875 0.002525" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="rack_structure_link_collision_box_02_geom" type="box" pos="-0.00525780958829 -0.372275657359 0.185925" size="0.1875 0.06875 0.002525" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="rack_structure_link_collision_box_03_geom" type="box" pos="-0.00525780958829 -0.372275657359 0.104225" size="0.1875 0.06875 0.002525" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="rack_structure_link_collision_box_04_geom" type="box" pos="-0.00525780958829 -0.372275657359 0.022525" size="0.1875 0.06875 0.002525" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="rack_structure_link_collision_box_05_geom" type="box" pos="-0.0669078095883 -0.372275657359 0.145" size="0.0025 0.06875 0.125" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="rack_structure_link_collision_box_06_geom" type="box" pos="0.0563921904117 -0.372275657359 0.145" size="0.0025 0.06875 0.125" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="rack_structure_link_collision_box_07_geom" type="box" pos="-0.190257809588 -0.372275657359 0.145" size="0.0025 0.06875 0.125" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="rack_structure_link_collision_box_08_geom" type="box" pos="0.179742190412 -0.372275657359 0.145" size="0.0025 0.06875 0.125" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+            </body>
+            <body name="storage_bin_link" pos="0 -0.05 0" euler="0 0 0">
+                <geom name="storage_bin_link_geom" type="mesh" mesh="storage_bin_link" pos="0 0 0" euler="0 0 0" rgba="0.95 0.55 0.18 1" group="1" contype="0" conaffinity="0" />
+                <geom name="storage_bin_link_collision_box_01_geom" type="box" pos="-0.2225 0.1 0.055" size="0.0025 0.175 0.035" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="storage_bin_link_collision_box_02_geom" type="box" pos="0.2225 0.1 0.055" size="0.0025 0.175 0.035" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="storage_bin_link_collision_box_03_geom" type="box" pos="0 0.2725 0.055" size="0.225 0.0025 0.035" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="storage_bin_link_collision_box_04_geom" type="box" pos="0 -0.0725 0.055" size="0.225 0.0025 0.035" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <geom name="storage_bin_link_collision_box_05_geom" type="box" pos="0 0.1 0.0225" size="0.225 0.175 0.0025" quat="1 0 0 0" rgba="1 0.55 0 0.35" group="0" contype="1" conaffinity="1" />
+                <body name="storage_bin_center_marker" pos="0 0.1 0.055" quat="1 0 0 0">
+                    <geom name="storage_bin_center_marker_x" type="capsule" fromto="0 0 0 0.06 0 0" size="0.0025" rgba="1 0 0 1" contype="0" conaffinity="0" group="0" />
+                    <geom name="storage_bin_center_marker_y" type="capsule" fromto="0 0 0 0 0.06 0" size="0.0025" rgba="0 1 0 1" contype="0" conaffinity="0" group="0" />
+                    <geom name="storage_bin_center_marker_z" type="capsule" fromto="0 0 0 0 0 0.06" size="0.0025" rgba="0.1 0.25 1 1" contype="0" conaffinity="0" group="0" />
+                </body>
+            </body>
+            <inertial mass="287.26314801093747" pos="8.007987953522093e-05 0.08744546073572491 0.0847762024349828" fullinertia="35.34866560761468 25.357808522367534 53.763140960536376 0.01058122512595603 -0.0013848130361038787 -3.089676744226039" />
+            <body name="cnc_x_link" pos="-3.552713678800501e-17 -0.08000000000000004 -1.3322676295501878e-17" euler="-0.0 0.0 3.8453833243485208e-31">
+                <joint name="base_link_base_cnc_x_joint" type="slide" axis="3.289960873394836e-31 1.0 0.0" pos="0.36500000000000005 0.14000000000000004 0.305" ref="0" range="-0.1 0.23" />
+                <geom name="cnc_x_link_collision_box_01_geom" type="box" pos="-5.55111512313e-17 0.295 0.360000000991" size="0.45 0.0425 0.055" quat="1 0 0 0" rgba="0.95 0.95 0.05 0.58" group="0" contype="1" conaffinity="1" />
+                <geom name="cnc_x_link_geom" type="mesh" mesh="cnc_x_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                <inertial mass="44.560525" pos="-5.1270731008074895e-17 0.295 0.36000792742006515" fullinertia="0.050456894335054514 3.3921732663663056 3.3912918858854155 5.711626727133922e-17 9.13679162484155e-17 -1.3322676295501878e-15" />
+                <body name="cnc_y_link" pos="0.034999999999999996 -3.552713678800501e-17 0.0" euler="-0.0 0.0 -0.0">
+                    <joint name="cnc_x_link_cnc_x_cnc_y_joint" type="slide" axis="-1.0 3.8453833243485208e-31 0.0" pos="-0.39999999999999997 0.3350000000000001 0.395" ref="0" range="-0.2 0.2" />
+                    <geom name="cnc_y_link_collision_box_01_geom" type="box" pos="0.0025 0.212500000768 0.405000001445" size="0.04 0.0425 0.26" quat="1 0 0 0" rgba="0.20 0.85 0.95 0.58" group="0" contype="1" conaffinity="1" />
+                    <geom name="cnc_y_link_collision_box_02_geom" type="box" pos="3.46944695195e-18 0.295000000768 0.430000001445" size="0.0475 0.04 0.035" quat="1 0 0 0" rgba="0.20 0.85 0.95 0.58" group="0" contype="1" conaffinity="1" />
+                    <geom name="cnc_y_link_geom" type="mesh" mesh="cnc_y_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                    <inertial mass="26.13476877913349" pos="7.307244323202329e-32 0.2221073321052037 0.4056836431042875" fullinertia="0.6145857025071058 0.6063585209389988 0.035880779486715975 -5.551115123125786e-17 5.551115123125783e-17 -0.0011881295604192488" />
+                    <body name="head_camera_frame" pos="0.0367339366674 -0.0246809926629 0.813347995281" quat="-0.00301242463569 -0.000217037732854 0.0718609260542 0.99741008893">
+                        <camera name="head_camera" pos="0 0 0" quat="1 0 0 0" fovy="70" />
+                        <geom name="head_camera_marker_x" type="capsule" fromto="0 0 0 0.045 0 0" size="0.0025" rgba="1 0 0 1" contype="0" conaffinity="0" group="0" />
+                        <geom name="head_camera_marker_y" type="capsule" fromto="0 0 0 0 0.045 0" size="0.0025" rgba="0 1 0 1" contype="0" conaffinity="0" group="0" />
+                        <geom name="head_camera_marker_z" type="capsule" fromto="0 0 0 0 0 0.045" size="0.0025" rgba="0.1 0.25 1 1" contype="0" conaffinity="0" group="0" />
+                    </body>
+                    <body name="head_link" pos="0.0 -3.552713678800501e-17 -3.552713678800501e-17" euler="-0.0 0.0 -0.0">
+                        <joint name="cnc_y_link_cnc_y_head_joint" type="slide" axis="0.0 0.0 -1.0" pos="-0.03999999999999996 0.1850000000000001 0.58" ref="0" range="-0.1 0.14" />
+                        <geom name="head_link_collision_box_01_geom" type="box" pos="0.00420498914302 0.169974998296 0.419211306692" size="0.04 0.015 0.045" quat="1 0 0 0" rgba="0.10 0.95 0.30 0.58" group="0" contype="1" conaffinity="1" />
+                        <geom name="head_link_collision_box_02_geom" type="box" pos="-0.035795010857 0.109974998296 0.499211306692" size="0.06 0.045 0.1" quat="1 0 0 0" rgba="0.10 0.95 0.30 0.58" group="0" contype="1" conaffinity="1" />
+                        <geom name="head_link_collision_box_03_geom" type="box" pos="0.00425748914302 0.072249998296 0.419211306692" size="0.0790525 0.022725 0.028" quat="1 0 0 0" rgba="0.10 0.95 0.30 0.58" group="0" contype="1" conaffinity="1" />
+                        <geom name="head_link_geom" type="mesh" mesh="head_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                        <inertial mass="4.937899994170017" pos="-0.001810199117437663 0.11847927197126139 0.4304442637179299" fullinertia="0.016208491913883738 0.014123788444106 0.01633334456704214 1.936612568613147e-06 0.0009746032114292258 -0.0003206707666744274" />
+                        <body name="shoulder_l_link" pos="-0.0025005645751715335 4.0243364196612676e-14 -0.0220000000000004" euler="3.155443620884047e-29 -3.423187659263466e-16 -6.726232628759122e-44">
+                            <joint name="head_link_head_shoulder_l_joint" type="hinge" axis="-1.0 3.845383324347848e-31 3.423187659263466e-16" pos="0.08999956457517172 0.07249999999995987 0.45500100000000043" ref="0" range="-1.5 1.5" />
+                            <geom name="shoulder_l_link_collision_box_01_geom" type="box" pos="0.109995117151 0.0975048658468 0.455000579505" size="0.02 0.0025 0.012" quat="1 0 0 0" rgba="0.15 0.55 1 0.56" group="0" contype="1" conaffinity="1" />
+                            <geom name="shoulder_l_link_collision_box_02_geom" type="box" pos="0.0924951171515 0.0800048658468 0.455000579505" size="0.0025 0.02 0.012" quat="1 0 0 0" rgba="0.15 0.55 1 0.56" group="0" contype="1" conaffinity="1" />
+                            <geom name="shoulder_l_link_geom" type="mesh" mesh="shoulder_l_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                            <inertial mass="0.06086598121195418" pos="0.10093292126462942 0.08906706545511499 0.455000577847961" fullinertia="1.0591637301417267e-05 1.0591637301484921e-05 1.549600110190572e-05 -4.328446823614041e-06 -2.166725489207172e-18 -2.3837630708930725e-18" />
+                            <body name="forearm_l_link" pos="7.03421524131631e-05 -0.007930222422767405 0.022000000000000346" euler="6.106226633726722e-16 0.0 1.1777960377692807e-29">
+                                <joint name="shoulder_l_link_shoulder_l_forearm_l_joint" type="hinge" axis="-1.232389329660039e-28 -1.0 6.106226633727038e-16" pos="0.11742922242275856 0.10793022242272754 0.433001" ref="0" range="-0.5 1.5" />
+                                <geom name="forearm_l_link_collision_box_01_geom" type="box" pos="0.123749714101 0.127430221439 0.391750000877" size="0.0215 0.020215 0.05625" quat="1 0 0 0" rgba="1 0.20 0.70 0.56" group="0" contype="1" conaffinity="1" />
+                                <geom name="forearm_l_link_geom" type="mesh" mesh="forearm_l_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                                <inertial mass="1.322615599621674" pos="0.11951710369968743 0.13029335773842043 0.39068007352086176" fullinertia="0.0015637120607468746 0.0015494687137995733 0.0003509537591931121 4.216008418642167e-06 7.435845734740612e-05 1.9652436448472324e-05" />
+                                <body name="arm_l_link" pos="-0.037168754402817465 0.06296170015350813 -2.573120174346096e-05" euler="5.0487097934144756e-27 -5.4206639177323356e-14 3.1554436208826986e-29">
+                                    <joint name="forearm_l_link_forearm_l_arm_l_joint" type="hinge" axis="-1.0 4.39259625155287e-29 5.45489579432497e-14" pos="0.18466797682559505 0.06563852226921935 0.35118573120173346" ref="0" range="-1 0.5" />
+                                    <geom name="arm_l_link_collision_box_01_geom" type="box" pos="0.17216818252 -0.00687151565305 0.354639694278" size="0.0175 0.028 0.0195" quat="0 1 0 0" rgba="0.95 1 0.10 0.56" group="0" contype="1" conaffinity="1" />
+                                    <geom name="arm_l_link_collision_box_02_geom" type="box" pos="0.18716818252 0.0213784843469 0.354639694278" size="0.0025 0.05625 0.0195" quat="0 1 0 0" rgba="0.95 1 0.10 0.56" group="0" contype="1" conaffinity="1" />
+                                    <geom name="arm_l_link_geom" type="mesh" mesh="arm_l_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                                    <inertial mass="0.7054723805731411" pos="0.17379204040031299 -0.001100927786509496 0.35218239636514764" fullinertia="0.00047945582516766016 0.00017795598639351595 0.000457014912063288 -5.600219300973922e-05 1.2923506167913138e-06 6.602032044605089e-06" />
+                                    <body name="wrist_l_link" pos="0.004698911207667765 5.3067069370174026e-05 -0.008162692562710884" euler="-7.099520974836015e-14 5.45489579432497e-14 3.872577005290593e-27">
+                                        <joint name="arm_l_link_arm_l_wrist_l_joint" type="hinge" axis="-3.587324068671532e-43 7.038458708498241e-14 -1.0" pos="0.16736806561790768 -0.01994454480017819 0.3857564237644528" ref="0" range="-1 1" />
+                                        <geom name="wrist_l_link_collision_box_01_geom" type="box" pos="0.167667201913 -0.083110008119 0.362756470059" size="0.0175 0.028 0.028" quat="0 0 0 1" rgba="0 0.75 1 0.56" group="0" contype="1" conaffinity="1" />
+                                        <geom name="wrist_l_link_collision_box_02_geom" type="box" pos="0.167667201913 -0.063610008119 0.388256470059" size="0.0175 0.0475 0.0025" quat="0 0 0 1" rgba="0 0.75 1 0.56" group="0" contype="1" conaffinity="1" />
+                                        <geom name="wrist_l_link_geom" type="mesh" mesh="wrist_l_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                                        <inertial mass="0.698313574199002" pos="0.16734866035845536 -0.08071724058435842 0.36542745189706155" fullinertia="0.00045253404319045565 0.0002695392378261154 0.00032074507240269245 -1.7293857477833148e-07 -2.877815320074913e-08 -7.203946742244754e-05" />
+                                        <body name="hand_l_link" pos="-0.0008667804615630992 0.005989868261108032 0.0060745008364249545" euler="2.227382159879897e-14 -9.753318261136062e-43 -3.78924492412223e-15">
+                                            <joint name="wrist_l_link_wrist_l_hand_l_joint" type="hinge" axis="-3.789244924122195e-15 1.0 4.8110765486183436e-14" pos="0.16816484607947121 -0.11765241306127666 0.36965992292802397" ref="0" range="-1 1" />
+                                            <geom name="hand_l_link_collision_box_01_geom" type="box" pos="0.16821235622 -0.13768301636 0.369176940929" size="0.028 0.02 0.017" quat="1 0 0 0" rgba="1 0.55 0.10 0.56" group="0" contype="1" conaffinity="1" />
+                                            <geom name="hand_l_link_collision_box_02_geom" type="box" pos="0.19121235622 -0.16768301636 0.383676940929" size="0.005 0.01 0.0025" quat="1 0 0 0" rgba="1 0.55 0.10 0.56" group="0" contype="1" conaffinity="1" />
+                                            <geom name="hand_l_link_collision_box_03_geom" type="box" pos="0.19121235622 -0.19768301636 0.388676940929" size="0.005 0.04 0.0025" quat="1 0 0 0" rgba="1 0.55 0.10 0.56" group="0" contype="1" conaffinity="1" condim="4" friction="1.8 0.08 0.003" />
+                                            <geom name="hand_l_link_geom" type="mesh" mesh="hand_l_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                                            <inertial mass="0.5892287295999151" pos="0.16979506216785367 -0.14164503913626791 0.3702600184772445" fullinertia="0.0002573429411616004 0.00023538533292620213 0.0003604348658942621 4.195242739740095e-05 -1.655094311928623e-05 3.42732024334472e-05" />
+                                            <body name="finger_l_link" pos="0.0008939763066928524 -0.006000555648823303 -0.014899999999999011" euler="-2.9220595817172177e-16 -2.290531301631981e-30 -2.3665827156542114e-30">
+                                                <joint name="hand_l_link_hand_l_finger_l_joint" type="hinge" axis="-1.8434693278883538e-28 4.840297144435516e-14 -1.0" pos="0.18038486977277846 -0.13420585741245428 0.4025939229280218" ref="0" range="0 1" />
+                                                <geom name="finger_l_link_collision_box_01_geom" type="box" pos="0.180380836536 -0.132709432376 0.405093780518" size="0.01 0.01 0.0025" quat="1 0 0 0" rgba="0.90 0.25 1 0.58" group="0" contype="1" conaffinity="1" />
+                                                <geom name="finger_l_link_collision_box_02_geom" type="box" pos="0.175380836536 -0.187709432376 0.405093780518" size="0.005 0.045 0.0025" quat="1 0 0 0" rgba="0.90 0.25 1 0.58" group="0" contype="1" conaffinity="1" condim="4" friction="1.8 0.08 0.003" />
+                                                <geom name="finger_l_link_collision_box_03_geom" type="box" pos="0.177630836536 -0.224209432376 0.405093780518" size="0.00725 0.0085 0.0025" quat="1 0 0 0" rgba="0.90 0.25 1 0.58" group="0" contype="1" conaffinity="1" condim="4" friction="1.8 0.08 0.003" />
+                                                <geom name="finger_l_link_geom" type="mesh" mesh="finger_l_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                                                <inertial mass="0.044127103697622586" pos="0.1770162811881247 -0.17386334444897972 0.4050937764144859" fullinertia="4.121361164319097e-05 9.040598726375806e-07 4.193380858374821e-05 -7.053817057546748e-07 -1.768866046537829e-18 1.8244258973804682e-19" />
+                                            </body>
+                                        </body>
+                                    </body>
+                                </body>
+                            </body>
+                        </body>
+                        <body name="shoulder_r_link" pos="0.0022598537098186666 2.020605904817785e-14 0.8880011556959169" euler="3.141592653589793 5.022517270239526e-14 -3.141592653589726">
+                            <joint name="head_link_head_shoulder_r_joint" type="hinge" axis="-0.9999999999999996 6.731074031485223e-14 5.022517270239524e-14" pos="0.08989985370984632 0.07249999999997396 0.4550001556959121" ref="0" range="-1.5 1.5" />
+                            <geom name="shoulder_r_link_collision_box_01_geom" type="box" pos="0.109895122365 0.0975048658823 0.455000579505" size="0.02 0.0025 0.012" quat="1 0 0 0" rgba="0.05 0.95 0.85 0.56" group="0" contype="1" conaffinity="1" />
+                            <geom name="shoulder_r_link_collision_box_02_geom" type="box" pos="0.0923951223655 0.0800048658823 0.455000579505" size="0.0025 0.02 0.012" quat="1 0 0 0" rgba="0.05 0.95 0.85 0.56" group="0" contype="1" conaffinity="1" />
+                            <geom name="shoulder_r_link_geom" type="mesh" mesh="shoulder_r_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                            <inertial mass="0.06086598121195414" pos="0.10083292126462934 0.089067065455115 0.4550005778479609" fullinertia="1.0591637301406266e-05 1.0591637301485504e-05 1.549600110190538e-05 -4.3284468236143175e-06 -2.138201429394096e-18 -1.0819686762307864e-18" />
+                            <body name="forearm_r_link" pos="-0.0006703687129054936 -0.003930222422774064 0.8880011556959115" euler="3.1415926535897927 -4.291403324402305e-28 -3.1415926535897367">
+                                <joint name="shoulder_r_link_shoulder_r_forearm_r_joint" type="hinge" axis="1.070324384677724e-14 -0.9999999999999994 3.885780585401017e-16" pos="-0.11807022242274783 0.10393022242275303 0.4330009999999999" ref="0" range="-0.5 1.5" />
+                                <geom name="forearm_r_link_collision_box_01_geom" type="box" pos="-0.124070064813 0.127430221554 0.391749999995" size="0.0215 0.020215 0.05625" quat="1 0 0 0" rgba="0.70 0.30 1 0.56" group="0" contype="1" conaffinity="1" />
+                                <geom name="forearm_r_link_geom" type="mesh" mesh="forearm_r_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                                <inertial mass="1.328209583290109" pos="-0.11997916848734096 0.13022642001636855 0.390517585869547" fullinertia="0.001575553986902282 0.0015584705862745334 0.0003508068094394011 -4.6479744714651605e-06 -7.16567773254218e-05 1.712497334407129e-05" />
+                                <body name="arm_r_link" pos="-0.032095084893888286 0.05902103545105998 0.00025986897609748524" euler="7.927953489858013e-26 -5.3881104902901784e-14 -1.4679847449068784e-13">
+                                    <joint name="forearm_r_link_forearm_r_arm_r_joint" type="hinge" axis="1.0 1.5750171833746487e-13 -1.0410627760529668e-13" pos="-0.11554513752885519 0.06937918697167582 0.35080013102391033" ref="0" range="-1 0.5" />
+                                    <geom name="arm_r_link_collision_box_01_geom" type="box" pos="-0.103045051542 -0.00313085413515 0.3544468842" size="0.0175 0.028 0.0195" quat="0 0 0 -1" rgba="0.15 0.95 0.15 0.56" group="0" contype="1" conaffinity="1" />
+                                    <geom name="arm_r_link_collision_box_02_geom" type="box" pos="-0.118045051542 0.0251191458649 0.3544468842" size="0.0025 0.05625 0.0195" quat="0 0 0 -1" rgba="0.15 0.95 0.15 0.56" group="0" contype="1" conaffinity="1" />
+                                    <geom name="arm_r_link_geom" type="mesh" mesh="arm_r_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                                    <inertial mass="0.7056724276730193" pos="-0.10465496993996887 0.0026695915830464135 0.35194005358618435" fullinertia="0.00048056753787714267 0.00017935150530809898 0.0004567374750959226 5.602683112661032e-05 -1.5350374641955124e-06 7.070408961827696e-06" />
+                                    <body name="wrist_r_link" pos="-0.0057402112262631136 -0.00010932532735069778 -0.013162692562729983" euler="-7.103493805341442e-14 1.0410627760529666e-13 7.405216663354352e-27">
+                                        <joint name="arm_r_link_arm_r_wrist_r_joint" type="hinge" axis="5.048709793414476e-29 7.064635999477922e-14 -1.0" pos="-0.09715192630261653 -0.015933487700999248 0.39075682358662783" ref="0" range="-1 1" />
+                                        <geom name="wrist_r_link_collision_box_01_geom" type="box" pos="-0.097238789988 -0.074982580743 0.367756470202" size="0.0175 0.028 0.028" quat="0 0 0 1" rgba="1 0.15 0.15 0.56" group="0" contype="1" conaffinity="1" />
+                                        <geom name="wrist_r_link_collision_box_02_geom" type="box" pos="-0.097238789988 -0.0554825807432 0.393256470202" size="0.0175 0.0475 0.0025" quat="0 0 0 1" rgba="1 0.15 0.15 0.56" group="0" contype="1" conaffinity="1" />
+                                        <geom name="wrist_r_link_geom" type="mesh" mesh="wrist_r_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                                        <inertial mass="0.6982734085268784" pos="-0.09713273444737847 -0.07636739808536276 0.3704412627117112" fullinertia="0.00044718006825167356 0.00026948448277097257 0.0003154350126423018 1.668671367040458e-07 2.889253289479853e-08 -7.137262027333951e-05" />
+                                        <body name="hand_r_link" pos="0.07108455069504017 0.01081305728807089 0.011119357005996575" euler="-3.1415926535897643 1.2246467991465863e-16 3.141592653589636">
+                                            <joint name="wrist_r_link_wrist_r_hand_r_joint" type="hinge" axis="0.0 1.0 -4.183707053319964e-14" pos="0.16816447699766085 -0.11765254498903227 -0.36966046658062823" ref="0" range="-1 1" />
+                                            <geom name="hand_r_link_collision_box_01_geom" type="box" pos="0.16821235604 -0.137683018975 -0.36917694089" size="0.028 0.02 0.017" quat="0 0 1 0" rgba="0.55 0.95 0.20 0.56" group="0" contype="1" conaffinity="1" />
+                                            <geom name="hand_r_link_collision_box_02_geom" type="box" pos="0.19121235604 -0.167683018975 -0.38367694089" size="0.005 0.01 0.0025" quat="0 0 1 0" rgba="0.55 0.95 0.20 0.56" group="0" contype="1" conaffinity="1" />
+                                            <geom name="hand_r_link_collision_box_03_geom" type="box" pos="0.19121235604 -0.197683018975 -0.38867694089" size="0.005 0.04 0.0025" quat="0 0 1 0" rgba="0.55 0.95 0.20 0.56" group="0" contype="1" conaffinity="1" condim="4" friction="1.8 0.08 0.003" />
+                                            <geom name="hand_r_link_geom" type="mesh" mesh="hand_r_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                                            <inertial mass="0.5892287295999157" pos="0.16979506216784807 -0.14164503913626517 -0.37026001847724455" fullinertia="0.00025734294115951906 0.00023538533292814513 0.0003604348658940951 4.195242739732616e-05 1.6550943119289848e-05 -3.427320243345499e-05" />
+                                            <body name="finger_r_link" pos="0.0008939763066930428 -0.006000555648823114 0.014899999999999134" euler="2.9220595817169653e-16 2.453933031620848e-15 4.662936703425558e-15">
+                                                <joint name="hand_r_link_hand_r_finger_r_joint" type="hinge" axis="-2.268716312065302e-28 -4.212927649137136e-14 -1.0" pos="0.18038450069096787 -0.13420598934021086 -0.40259346658062595" ref="0" range="0 1" />
+                                                <geom name="finger_r_link_collision_box_01_geom" type="box" pos="0.180380836536 -0.132709432376 -0.405093780518" size="0.01 0.01 0.0025" quat="1 0 0 0" rgba="0.35 0.35 1 0.58" group="0" contype="1" conaffinity="1" />
+                                                <geom name="finger_r_link_collision_box_02_geom" type="box" pos="0.175380836536 -0.187709432376 -0.405093780518" size="0.005 0.045 0.0025" quat="1 0 0 0" rgba="0.35 0.35 1 0.58" group="0" contype="1" conaffinity="1" condim="4" friction="1.8 0.08 0.003" />
+                                                <geom name="finger_r_link_collision_box_03_geom" type="box" pos="0.177630836536 -0.224209432376 -0.405093780518" size="0.00725 0.0085 0.0025" quat="1 0 0 0" rgba="0.35 0.35 1 0.58" group="0" contype="1" conaffinity="1" condim="4" friction="1.8 0.08 0.003" />
+                                                <geom name="finger_r_link_geom" type="mesh" mesh="finger_r_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                                                <inertial mass="0.04412710369762258" pos="0.17701628118812462 -0.17386334444898036 -0.4050937764144856" fullinertia="4.121361164319097e-05 9.040598726349904e-07 4.1933808583749944e-05 -7.053817058012067e-07 2.3761412812305535e-17 1.2932281837047848e-18" />
+                                            </body>
+                                        </body>
+                                    </body>
+                                </body>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+            <body name="drawer_1_link" pos="0.0008664227730892549 -0.0007010154072268904 -0.0007567650746815957" euler="5.167583532800728e-16 0.0 1.3799473502327753e-46">
+                <joint name="base_link_base_drawer_1_joint" type="slide" axis="0.0 -1.0 5.167583532800728e-16" pos="0.18322757722691074 -0.440576984592773 0.1890567650746818" ref="0" range="-0.1 0" limited="true" damping="4" frictionloss="1" armature="0.01" />
+                <geom name="drawer_1_link_collision_box_01_geom" type="box" pos="0.12480289061 -0.370576841691 0.189131760504" size="0.0585 0.068 0.0025" quat="1 0 0 0" rgba="1 0.80 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_1_link_collision_box_02_geom" type="box" pos="0.12480289061 -0.370576841691 0.195131760504" size="0.0585 0.068 0.004" quat="1 0 0 0" rgba="1 0.80 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_1_link_collision_box_03_geom" type="box" pos="0.18080289061 -0.370576841691 0.214131760504" size="0.0025 0.068 0.0225" quat="1 0 0 0" rgba="1 0.80 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_1_link_collision_box_04_geom" type="box" pos="0.12480289061 -0.308826841691 0.229131760504" size="0.0585 0.00625 0.0375" quat="1 0 0 0" rgba="1 0.80 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_1_link_collision_box_05_geom" type="box" pos="0.12480289061 -0.301326841691 0.224131760504" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="1 0.80 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_1_link_collision_box_06_geom" type="box" pos="0.17355289061 -0.291326841691 0.224131760504" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="1 0.80 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_1_link_collision_box_07_geom" type="box" pos="0.0760528906097 -0.291326841691 0.224131760504" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="1 0.80 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_1_link_collision_box_08_geom" type="box" pos="0.12480289061 -0.283826841691 0.224131760504" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="1 0.80 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_1_link_geom" type="mesh" mesh="drawer_1_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                <inertial mass="2.100286977812505" pos="0.12480288823138735 -0.35246027814259834 0.21418692210380377" fullinertia="0.005961342870127007 0.0041695488904602285 0.008235159974119222 2.7755575615628914e-17 -1.434292554947294e-32 -0.0007490782015920884" />
+            </body>
+            <body name="drawer_2_link" pos="0.0008666413147627594 -0.0012010154072273594 -0.0008923865464896963" euler="1.5616741411625728e-15 0.0 6.3014188567439054e-46">
+                <joint name="base_link_base_drawer_2_joint" type="slide" axis="0.0 -1.0 1.5616741411625728e-15" pos="0.05987735868523724 -0.3025769845927724 0.18919238654649018" ref="0" range="-0.1 0" limited="true" damping="4" frictionloss="1" armature="0.01" />
+                <geom name="drawer_2_link_collision_box_01_geom" type="box" pos="0.00145266922765 -0.370576841791 0.189267380595" size="0.0585 0.068 0.0025" quat="1 0 0 0" rgba="0.95 0.55 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_2_link_collision_box_02_geom" type="box" pos="0.00145266922765 -0.370576841791 0.195267380595" size="0.0585 0.068 0.004" quat="1 0 0 0" rgba="0.95 0.55 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_2_link_collision_box_03_geom" type="box" pos="0.0574526692276 -0.370576841791 0.214267380595" size="0.0025 0.068 0.0225" quat="1 0 0 0" rgba="0.95 0.55 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_2_link_collision_box_04_geom" type="box" pos="0.00145266922765 -0.308826841791 0.229267380595" size="0.0585 0.00625 0.0375" quat="1 0 0 0" rgba="0.95 0.55 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_2_link_collision_box_05_geom" type="box" pos="0.00145266922765 -0.301326841791 0.224267380595" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.95 0.55 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_2_link_collision_box_06_geom" type="box" pos="0.0502026692276 -0.291326841791 0.224267380595" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.95 0.55 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_2_link_collision_box_07_geom" type="box" pos="-0.0472973307724 -0.291326841791 0.224267380595" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.95 0.55 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_2_link_collision_box_08_geom" type="box" pos="0.00145266922765 -0.283826841791 0.224267380595" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.95 0.55 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_2_link_geom" type="mesh" mesh="drawer_2_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                <inertial mass="2.100286977812506" pos="0.0014526696897139023 -0.35246027814259745 0.21432254357561234" fullinertia="0.00596134287012684 0.004169548890460227 0.00823515997411917 1.1275702593849238e-17 -4.553649124439136e-18 -0.0007490782015920286" />
+            </body>
+            <body name="drawer_3_link" pos="0.0007779618880631123 -0.0007010154072269614 -0.0007152149542375597" euler="1.0392162472213227e-15 0.0 2.7904186494093203e-46">
+                <joint name="base_link_base_drawer_3_joint" type="slide" axis="0.0 -1.0 1.0392162472213227e-15" pos="-0.06338396188806311 -0.44057698459277284 0.189015214954238" ref="0" range="-0.1 0" limited="true" damping="4" frictionloss="1" armature="0.01" />
+                <geom name="drawer_3_link_collision_box_01_geom" type="box" pos="-0.121808654617 -0.370576843344 0.189090217291" size="0.0585 0.068 0.0025" quat="1 0 0 0" rgba="0.75 0.85 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_3_link_collision_box_02_geom" type="box" pos="-0.121808654617 -0.370576843344 0.195090217291" size="0.0585 0.068 0.004" quat="1 0 0 0" rgba="0.75 0.85 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_3_link_collision_box_03_geom" type="box" pos="-0.0658086546172 -0.370576843344 0.214090217291" size="0.0025 0.068 0.0225" quat="1 0 0 0" rgba="0.75 0.85 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_3_link_collision_box_04_geom" type="box" pos="-0.121808654617 -0.308826843344 0.229090217291" size="0.0585 0.00625 0.0375" quat="1 0 0 0" rgba="0.75 0.85 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_3_link_collision_box_05_geom" type="box" pos="-0.121808654617 -0.301326843344 0.224090217291" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.75 0.85 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_3_link_collision_box_06_geom" type="box" pos="-0.0730586546172 -0.291326843344 0.224090217291" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.75 0.85 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_3_link_collision_box_07_geom" type="box" pos="-0.170558654617 -0.291326843344 0.224090217291" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.75 0.85 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_3_link_collision_box_08_geom" type="box" pos="-0.121808654617 -0.283826843344 0.224090217291" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.75 0.85 0.05 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_3_link_geom" type="mesh" mesh="drawer_3_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                <inertial mass="2.1002869778125035" pos="-0.12180865088358633 -0.3524602781425979 0.21414537198335992" fullinertia="0.005961342870127118 0.004169548890460199 0.008235159974119333 2.775557561562892e-17 6.9388939039072e-18 -0.0007490782015920307" />
+            </body>
+            <body name="drawer_4_link" pos="0.0008494582172226117 -0.0007010154072273878 -0.0006014377666680027" euler="4.173963610868822e-15 0.0 4.501474838904161e-45">
+                <joint name="base_link_base_drawer_4_joint" type="slide" axis="0.0 -1.0 4.173963610868822e-15" pos="0.1832445417827774 -0.44057698459277217 0.10725143776666984" ref="0" range="-0.1 0" limited="true" damping="4" frictionloss="1" armature="0.01" />
+                <geom name="drawer_4_link_collision_box_01_geom" type="box" pos="0.124819854736 -0.37057684356 0.107326438582" size="0.0585 0.068 0.0025" quat="1 0 0 0" rgba="0.45 0.85 0.15 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_4_link_collision_box_02_geom" type="box" pos="0.124819854736 -0.37057684356 0.113326438582" size="0.0585 0.068 0.004" quat="1 0 0 0" rgba="0.45 0.85 0.15 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_4_link_collision_box_03_geom" type="box" pos="0.180819854736 -0.37057684356 0.132326438582" size="0.0025 0.068 0.0225" quat="1 0 0 0" rgba="0.45 0.85 0.15 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_4_link_collision_box_04_geom" type="box" pos="0.124819854736 -0.30882684356 0.147326438582" size="0.0585 0.00625 0.0375" quat="1 0 0 0" rgba="0.45 0.85 0.15 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_4_link_collision_box_05_geom" type="box" pos="0.124819854736 -0.30132684356 0.142326438582" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.45 0.85 0.15 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_4_link_collision_box_06_geom" type="box" pos="0.173569854736 -0.29132684356 0.142326438582" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.45 0.85 0.15 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_4_link_collision_box_07_geom" type="box" pos="0.0760698547363 -0.29132684356 0.142326438582" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.45 0.85 0.15 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_4_link_collision_box_08_geom" type="box" pos="0.124819854736 -0.28382684356 0.142326438582" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.45 0.85 0.15 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_4_link_geom" type="mesh" mesh="drawer_4_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                <inertial mass="2.1002869778125013" pos="0.12481985278725416 -0.35246027814259695 0.1323815947957915" fullinertia="0.005961342870127007 0.00416954889046018 0.008235159974119229 -1.3877787807814427e-17 6.938893903907287e-18 -0.0007490782015920458" />
+            </body>
+            <body name="drawer_5_link" pos="0.0008249148590972589 4.898459277249856e-05 -0.0007122085056818329" euler="1.0392162472213225e-15 0.0 2.7904186494093188e-46">
+                <joint name="base_link_base_drawer_5_joint" type="slide" axis="0.0 -1.0 1.0392162472213225e-15" pos="0.05991908514090274 -0.3725769845927724 0.10736220850568222" ref="0" range="-0.1 0" limited="true" damping="4" frictionloss="1" armature="0.01" />
+                <geom name="drawer_5_link_collision_box_01_geom" type="box" pos="0.00149439620972 -0.370576842842 0.107437205437" size="0.0585 0.068 0.0025" quat="1 0 0 0" rgba="0.10 0.75 0.45 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_5_link_collision_box_02_geom" type="box" pos="0.00149439620972 -0.370576842842 0.113437205437" size="0.0585 0.068 0.004" quat="1 0 0 0" rgba="0.10 0.75 0.45 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_5_link_collision_box_03_geom" type="box" pos="0.0574943962097 -0.370576842842 0.132437205437" size="0.0025 0.068 0.0225" quat="1 0 0 0" rgba="0.10 0.75 0.45 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_5_link_collision_box_04_geom" type="box" pos="0.00149439620972 -0.308826842842 0.147437205437" size="0.0585 0.00625 0.0375" quat="1 0 0 0" rgba="0.10 0.75 0.45 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_5_link_collision_box_05_geom" type="box" pos="0.00149439620972 -0.301326842842 0.142437205437" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.10 0.75 0.45 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_5_link_collision_box_06_geom" type="box" pos="0.0502443962097 -0.291326842842 0.142437205437" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.10 0.75 0.45 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_5_link_collision_box_07_geom" type="box" pos="-0.0472556037903 -0.291326842842 0.142437205437" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.10 0.75 0.45 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_5_link_collision_box_08_geom" type="box" pos="0.00149439620972 -0.283826842842 0.142437205437" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.10 0.75 0.45 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_5_link_geom" type="mesh" mesh="drawer_5_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                <inertial mass="2.1002869778124977" pos="0.0014943961453793575 -0.3524602781425975 0.13249236553480412" fullinertia="0.005961342870127007 0.004169548890460206 0.008235159974119222 6.505213034913027e-18 7.589415207398464e-19 -0.0007490782015920585" />
+            </body>
+            <body name="drawer_6_link" pos="0.0006552767076123623 4.898459277185907e-05 -0.0007226535451730598" euler="1.5616741411625722e-15 0.0 6.301418856743903e-46">
+                <joint name="base_link_base_drawer_6_joint" type="slide" axis="0.0 -1.0 1.5616741411625722e-15" pos="-0.06326127670761236 -0.3725769845927717 0.10737265354517364" ref="0" range="-0.1 0" limited="true" damping="4" frictionloss="1" armature="0.01" />
+                <geom name="drawer_6_link_collision_box_01_geom" type="box" pos="-0.12168596394 -0.370576843573 0.107447654324" size="0.0585 0.068 0.0025" quat="1 0 0 0" rgba="0.05 0.65 0.85 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_6_link_collision_box_02_geom" type="box" pos="-0.12168596394 -0.370576843573 0.113447654324" size="0.0585 0.068 0.004" quat="1 0 0 0" rgba="0.05 0.65 0.85 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_6_link_collision_box_03_geom" type="box" pos="-0.0656859639399 -0.370576843573 0.132447654324" size="0.0025 0.068 0.0225" quat="1 0 0 0" rgba="0.05 0.65 0.85 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_6_link_collision_box_04_geom" type="box" pos="-0.12168596394 -0.308826843573 0.147447654324" size="0.0585 0.00625 0.0375" quat="1 0 0 0" rgba="0.05 0.65 0.85 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_6_link_collision_box_05_geom" type="box" pos="-0.12168596394 -0.301326843573 0.142447654324" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.05 0.65 0.85 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_6_link_collision_box_06_geom" type="box" pos="-0.0729359639399 -0.291326843573 0.142447654324" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.05 0.65 0.85 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_6_link_collision_box_07_geom" type="box" pos="-0.17043596394 -0.291326843573 0.142447654324" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.05 0.65 0.85 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_6_link_collision_box_08_geom" type="box" pos="-0.12168596394 -0.283826843573 0.142447654324" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.05 0.65 0.85 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_6_link_geom" type="mesh" mesh="drawer_6_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                <inertial mass="2.1002869778125044" pos="-0.12168596570313563 -0.35246027814259684 0.13250281057429544" fullinertia="0.00596134287012684 0.004169548890460227 0.00823515997411917 -1.0836291178002532e-32 -6.938893903907228e-18 -0.0007490782015920425" />
+            </body>
+            <body name="drawer_7_link" pos="0.0007908727693208207 -0.00195101540723023 -0.0003549760409229785" euler="1.0392162472213227e-15 0.0 2.7904186494093203e-46">
+                <joint name="base_link_base_drawer_7_joint" type="slide" axis="0.0 -1.0 1.0392162472213227e-15" pos="0.18330312723067918 -0.3705769845927698 0.025354976040923367" ref="0" range="-0.1 0" limited="true" damping="4" frictionloss="1" armature="0.01" />
+                <geom name="drawer_7_link_collision_box_01_geom" type="box" pos="0.124878437042 -0.370576842575 0.0254299751893" size="0.0585 0.068 0.0025" quat="1 0 0 0" rgba="0.25 0.45 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_7_link_collision_box_02_geom" type="box" pos="0.124878437042 -0.370576842575 0.0314299751893" size="0.0585 0.068 0.004" quat="1 0 0 0" rgba="0.25 0.45 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_7_link_collision_box_03_geom" type="box" pos="0.180878437042 -0.370576842575 0.0504299751893" size="0.0025 0.068 0.0225" quat="1 0 0 0" rgba="0.25 0.45 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_7_link_collision_box_04_geom" type="box" pos="0.124878437042 -0.308826842575 0.0654299751893" size="0.0585 0.00625 0.0375" quat="1 0 0 0" rgba="0.25 0.45 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_7_link_collision_box_05_geom" type="box" pos="0.124878437042 -0.301326842575 0.0604299751893" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.25 0.45 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_7_link_collision_box_06_geom" type="box" pos="0.173628437042 -0.291326842575 0.0604299751893" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.25 0.45 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_7_link_collision_box_07_geom" type="box" pos="0.0761284370422 -0.291326842575 0.0604299751893" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.25 0.45 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_7_link_collision_box_08_geom" type="box" pos="0.124878437042 -0.283826842575 0.0604299751893" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.25 0.45 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_7_link_geom" type="mesh" mesh="drawer_7_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                <inertial mass="2.1002869778125004" pos="0.12487843823515583 -0.3524602781425948 0.0504851330700453" fullinertia="0.005961342870126729 0.004169548890460199 0.00823515997411911 3.60550564134269e-33 3.469446951953614e-18 -0.0007490782015920585" />
+            </body>
+            <body name="drawer_8_link" pos="0.0008994468506449672 -0.0007010154072266062 -0.00039715007349335976" euler="7.779873002506976e-16 0.0 4.930380657631339e-32">
+                <joint name="base_link_base_drawer_8_joint" type="slide" axis="0.0 -1.0 7.779873002506976e-16" pos="0.05984455314935503 -0.4405769845927734 0.025397150073493704" ref="0" range="-0.1 0" limited="true" damping="4" frictionloss="1" armature="0.01" />
+                <geom name="drawer_8_link_collision_box_01_geom" type="box" pos="0.00141986465454 -0.370576841748 0.0254721494358" size="0.0585 0.068 0.0025" quat="1 0 0 0" rgba="0.65 0.30 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_8_link_collision_box_02_geom" type="box" pos="0.00141986465454 -0.370576841748 0.0314721494358" size="0.0585 0.068 0.004" quat="1 0 0 0" rgba="0.65 0.30 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_8_link_collision_box_03_geom" type="box" pos="0.0574198646545 -0.370576841748 0.0504721494358" size="0.0025 0.068 0.0225" quat="1 0 0 0" rgba="0.65 0.30 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_8_link_collision_box_04_geom" type="box" pos="0.00141986465454 -0.308826841748 0.0654721494358" size="0.0585 0.00625 0.0375" quat="1 0 0 0" rgba="0.65 0.30 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_8_link_collision_box_05_geom" type="box" pos="0.00141986465454 -0.301326841748 0.0604721494358" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.65 0.30 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_8_link_collision_box_06_geom" type="box" pos="0.0501698646545 -0.291326841748 0.0604721494358" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.65 0.30 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_8_link_collision_box_07_geom" type="box" pos="-0.0473301353455 -0.291326841748 0.0604721494358" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="0.65 0.30 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_8_link_collision_box_08_geom" type="box" pos="0.00141986465454 -0.283826841748 0.0604721494358" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="0.65 0.30 1 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_8_link_geom" type="mesh" mesh="drawer_8_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                <inertial mass="2.100286977812501" pos="0.0014198641538318527 -0.3524602781425983 0.05052730710261556" fullinertia="0.0059613428701267845 0.004169548890460219 0.00823515997411911 6.2883726004159234e-18 -2.9815559743351422e-18 -0.0007490782015920735" />
+            </body>
+            <body name="drawer_9_link" pos="0.0012447912728019972 -0.0007010154072260378 -0.0003733308896808207" euler="9.10026658901305e-16 1.0772013596079931e-48 7.395570986447001e-32">
+                <joint name="base_link_base_drawer_9_joint" type="slide" axis="1.0795210693868056e-78 -1.0 9.10026658901305e-16" pos="-0.063850791272802 -0.44057698459277395 0.025373330889681224" ref="0" range="-0.1 0" limited="true" damping="4" frictionloss="1" armature="0.01" />
+                <geom name="drawer_9_link_collision_box_01_geom" type="box" pos="-0.122275482178 -0.370576841947 0.0254483304126" size="0.0585 0.068 0.0025" quat="1 0 0 0" rgba="1 0.30 0.55 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_9_link_collision_box_02_geom" type="box" pos="-0.122275482178 -0.370576841947 0.0314483304126" size="0.0585 0.068 0.004" quat="1 0 0 0" rgba="1 0.30 0.55 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_9_link_collision_box_03_geom" type="box" pos="-0.0662754821777 -0.370576841947 0.0504483304126" size="0.0025 0.068 0.0225" quat="1 0 0 0" rgba="1 0.30 0.55 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_9_link_collision_box_04_geom" type="box" pos="-0.122275482178 -0.308826841947 0.0654483304126" size="0.0585 0.00625 0.0375" quat="1 0 0 0" rgba="1 0.30 0.55 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_9_link_collision_box_05_geom" type="box" pos="-0.122275482178 -0.301326841947 0.0604483304126" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="1 0.30 0.55 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_9_link_collision_box_06_geom" type="box" pos="-0.0735254821777 -0.291326841947 0.0604483304126" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="1 0.30 0.55 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_9_link_collision_box_07_geom" type="box" pos="-0.171025482178 -0.291326841947 0.0604483304126" size="0.00125 0.00875 0.005" quat="1 0 0 0" rgba="1 0.30 0.55 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_9_link_collision_box_08_geom" type="box" pos="-0.122275482178 -0.283826841947 0.0604483304126" size="0.05 0.00125 0.005" quat="1 0 0 0" rgba="1 0.30 0.55 0.48" group="0" contype="1" conaffinity="1" />
+                <geom name="drawer_9_link_geom" type="mesh" mesh="drawer_9_link" pos="0 0 0" euler="0 0 0" rgba="0.8 0.8 0.8 1" group="1" contype="0" conaffinity="0" />
+                <inertial mass="2.100286977812501" pos="-0.12227548026832541 -0.35246027814259884 0.050503487918803075" fullinertia="0.005961342870126951 0.00416954889046022 0.008235159974119222 4.163336342344337e-17 1.7347234759767692e-18 -0.000749078201592059" />
+            </body>
+        </body>
+        <body name="cube_link" pos="0 0.05 0.055" euler="-0.0 0.0 -0.0">
+            <freejoint name="cube_link_free_joint" />
+            <!-- Invisible rigid proxy retained for pose, target, and containment calculations. -->
+            <geom name="cube_link_collision_box_01_geom" type="box" pos="0 0 0" size="0.015 0.015 0.015" quat="1 0 0 0" rgba="1 0.05 0.02 0" group="0" contype="0" conaffinity="0" />
+            <geom name="cube_link_geom" type="mesh" mesh="cube_link" pos="0.0834701154596 -0.114219679555 -0.04" euler="0 0 0" rgba="1 0.05 0.02 0" group="1" contype="0" conaffinity="0" />
+            <!--
+              A 3 g foam cube. The radial flex shell is the rendered collision
+              object; its edge constraint permits visible face compression.
+            -->
+            <inertial mass="0.0027" pos="0 0 0" fullinertia="4.5e-07 4.5e-07 4.5e-07 0 0 0" />
+            <flexcomp name="foam_cube" type="box" dof="radial" dim="3" count="3 3 3" spacing="0.015 0.015 0.015" radius="0" mass="0.0003" rgba="1 0.05 0.02 1">
+                <contact condim="6" friction="2.5 0.06 0.004" solref="0.004 1" solimp="0.985 0.998 0.00004" selfcollide="none" />
+                <edge equality="true" solref="0.012 1" solimp="0.93 0.985 0.0015 0.5 2" damping="2" />
+            </flexcomp>
+        </body>
+        <body name="cube_frame_marker" pos="0 0 -10" quat="1 0 0 0">
+            <geom name="cube_frame_marker_x" type="capsule" fromto="0 0 0 0.055 0 0" size="0.002" rgba="1 0 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="cube_frame_marker_y" type="capsule" fromto="0 0 0 0 0.055 0" size="0.002" rgba="0 1 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="cube_frame_marker_z" type="capsule" fromto="0 0 0 0 0 0.055" size="0.002" rgba="0.1 0.25 1 1" contype="0" conaffinity="0" group="0" />
+        </body>
+        <body name="hand_tip_marker" pos="0 0 -10" quat="1 0 0 0">
+            <geom name="hand_tip_marker_x" type="capsule" fromto="0 0 0 0.045 0 0" size="0.0025" rgba="1 0 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="hand_tip_marker_y" type="capsule" fromto="0 0 0 0 0.045 0" size="0.0025" rgba="0 1 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="hand_tip_marker_z" type="capsule" fromto="0 0 0 0 0 0.045" size="0.0025" rgba="0.1 0.25 1 1" contype="0" conaffinity="0" group="0" />
+        </body>
+        <body name="left_hand_tip_marker" pos="0 0 -10" quat="1 0 0 0">
+            <geom name="left_hand_tip_marker_x" type="capsule" fromto="0 0 0 0.045 0 0" size="0.0025" rgba="1 0 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="left_hand_tip_marker_y" type="capsule" fromto="0 0 0 0 0.045 0" size="0.0025" rgba="0 1 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="left_hand_tip_marker_z" type="capsule" fromto="0 0 0 0 0 0.045" size="0.0025" rgba="0.1 0.25 1 1" contype="0" conaffinity="0" group="0" />
+        </body>
+        <body name="drawer_target_marker" pos="0 0 -10" quat="1 0 0 0">
+            <geom name="drawer_target_marker_x" type="capsule" fromto="0 0 0 0.055 0 0" size="0.0025" rgba="1 0 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="drawer_target_marker_y" type="capsule" fromto="0 0 0 0 0.055 0" size="0.0025" rgba="0 1 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="drawer_target_marker_z" type="capsule" fromto="0 0 0 0 0 0.055" size="0.0025" rgba="0.1 0.25 1 1" contype="0" conaffinity="0" group="0" />
+        </body>
+        <body name="above_drawer_target_marker" pos="0 0 -10" quat="1 0 0 0">
+            <geom name="above_drawer_target_marker_x" type="capsule" fromto="0 0 0 0.06 0 0" size="0.0025" rgba="1 0 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="above_drawer_target_marker_y" type="capsule" fromto="0 0 0 0 0.06 0" size="0.0025" rgba="0 1 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="above_drawer_target_marker_z" type="capsule" fromto="0 0 0 0 0 0.06" size="0.0025" rgba="0.1 0.25 1 1" contype="0" conaffinity="0" group="0" />
+        </body>
+        <body name="drawer_close_target_marker" pos="0 0 -10" quat="1 0 0 0">
+            <geom name="drawer_close_target_marker_x" type="capsule" fromto="0 0 0 0.055 0 0" size="0.0025" rgba="1 0 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="drawer_close_target_marker_y" type="capsule" fromto="0 0 0 0 0.055 0" size="0.0025" rgba="0 1 0 1" contype="0" conaffinity="0" group="0" />
+            <geom name="drawer_close_target_marker_z" type="capsule" fromto="0 0 0 0 0 0.055" size="0.0025" rgba="0.1 0.25 1 1" contype="0" conaffinity="0" group="0" />
+        </body>
+    </worldbody>
+    <contact>
+        <exclude body1="base_link" body2="cnc_x_link" />
+        <exclude body1="cnc_x_link" body2="cnc_y_link" />
+        <exclude body1="cnc_y_link" body2="head_link" />
+        <exclude body1="head_link" body2="shoulder_l_link" />
+        <exclude body1="shoulder_l_link" body2="forearm_l_link" />
+        <exclude body1="forearm_l_link" body2="arm_l_link" />
+        <exclude body1="arm_l_link" body2="wrist_l_link" />
+        <exclude body1="wrist_l_link" body2="hand_l_link" />
+        <exclude body1="hand_l_link" body2="finger_l_link" />
+        <exclude body1="head_link" body2="shoulder_r_link" />
+        <exclude body1="shoulder_r_link" body2="forearm_r_link" />
+        <exclude body1="forearm_r_link" body2="arm_r_link" />
+        <exclude body1="arm_r_link" body2="wrist_r_link" />
+        <exclude body1="wrist_r_link" body2="hand_r_link" />
+        <exclude body1="hand_r_link" body2="finger_r_link" />
+        <exclude body1="base_link" body2="drawer_1_link" />
+        <exclude body1="base_link" body2="drawer_2_link" />
+        <exclude body1="base_link" body2="drawer_3_link" />
+        <exclude body1="base_link" body2="drawer_4_link" />
+        <exclude body1="base_link" body2="drawer_5_link" />
+        <exclude body1="base_link" body2="drawer_6_link" />
+        <exclude body1="base_link" body2="drawer_7_link" />
+        <exclude body1="base_link" body2="drawer_8_link" />
+        <exclude body1="base_link" body2="drawer_9_link" />
+        <exclude body1="rack_structure_link" body2="drawer_1_link" />
+        <exclude body1="rack_structure_link" body2="drawer_2_link" />
+        <exclude body1="rack_structure_link" body2="drawer_3_link" />
+        <exclude body1="rack_structure_link" body2="drawer_4_link" />
+        <exclude body1="rack_structure_link" body2="drawer_5_link" />
+        <exclude body1="rack_structure_link" body2="drawer_6_link" />
+        <exclude body1="rack_structure_link" body2="drawer_7_link" />
+        <exclude body1="rack_structure_link" body2="drawer_8_link" />
+        <exclude body1="rack_structure_link" body2="drawer_9_link" />
+    </contact>
+    <actuator>
+        <position name="cnc_x" joint="base_link_base_cnc_x_joint" ctrlrange="-0.1 0.23" kp="4000" forcerange="-3000 3000" />
+        <position name="cnc_y" joint="cnc_x_link_cnc_x_cnc_y_joint" ctrlrange="-0.2 0.2" kp="4000" forcerange="-3000 3000" />
+        <position name="head_z" joint="cnc_y_link_cnc_y_head_joint" ctrlrange="-0.1 0.14" kp="6000" forcerange="-4000 4000" />
+        <position name="shoulder_l" joint="head_link_head_shoulder_l_joint" ctrlrange="-1.5 1.5" kp="250" forcerange="-120 120" />
+        <position name="forearm_l" joint="shoulder_l_link_shoulder_l_forearm_l_joint" ctrlrange="-0.5 1.5" kp="250" forcerange="-120 120" />
+        <position name="arm_l" joint="forearm_l_link_forearm_l_arm_l_joint" ctrlrange="-1 0.5" kp="250" forcerange="-120 120" />
+        <position name="wrist_l" joint="arm_l_link_arm_l_wrist_l_joint" ctrlrange="-1 1" kp="180" forcerange="-80 80" />
+        <position name="hand_l" joint="wrist_l_link_wrist_l_hand_l_joint" ctrlrange="-1 1" kp="180" forcerange="-80 80" />
+        <position name="finger_l" joint="hand_l_link_hand_l_finger_l_joint" ctrlrange="0 1" kp="80" forcerange="-40 40" />
+        <position name="shoulder_r" joint="head_link_head_shoulder_r_joint" ctrlrange="-1.5 1.5" kp="250" forcerange="-120 120" />
+        <position name="forearm_r" joint="shoulder_r_link_shoulder_r_forearm_r_joint" ctrlrange="-0.5 1.5" kp="250" forcerange="-120 120" />
+        <position name="arm_r" joint="forearm_r_link_forearm_r_arm_r_joint" ctrlrange="-1 0.5" kp="250" forcerange="-120 120" />
+        <position name="wrist_r" joint="arm_r_link_arm_r_wrist_r_joint" ctrlrange="-1 1" kp="180" forcerange="-80 80" />
+        <position name="hand_r" joint="wrist_r_link_wrist_r_hand_r_joint" ctrlrange="-1 1" kp="180" forcerange="-80 80" />
+        <position name="finger_r" joint="hand_r_link_hand_r_finger_r_joint" ctrlrange="0 1" kp="80" forcerange="-40 40" />
+    </actuator>
+</mujoco>

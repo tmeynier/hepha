@@ -1,0 +1,8 @@
+mujoco>=3.2
+trimesh>=4.12
+scipy>=1.13
+coacd>=1.0
+
+# All dataset, training, checkpoint, processor, and policy code comes from this
+# pinned official Hugging Face LeRobot revision. Python 3.12 is required.
+lerobot[training] @ git+https://github.com/huggingface/lerobot.git@36b8face988669509272b00f4abe6592d0b17aa0

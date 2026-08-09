@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lerobot_robot_hepha"
+version = "0.1.0"
+description = "LeRobot integration and MuJoCo simulation pipeline for the Hepha robot"
+requires-python = ">=3.12"
+dependencies = [
+    "lerobot[core_scripts,training]==0.6.1",
+    "mujoco>=3.3,<4",
+    "numpy>=2.0,<2.3",
+    "scipy>=1.14,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<10",
+    "ruff>=0.11,<1",
+]
+
+[project.scripts]
+hepha-view = "simulation.view:main"
+hepha-record = "hepha_lerobot.recording.record:main"
+hepha-policies = "hepha_lerobot.policies.catalog:main"
+hepha-train = "hepha_lerobot.training.train:main"
+hepha-evaluate = "hepha_lerobot.evaluation.rollout:main"
+
+[tool.setuptools]
+package-dir = {"" = "lerobot", "hepha_lerobot" = "lerobot", "simulation" = "simulation"}
+py-modules = ["lerobot_robot_hepha"]
+packages = [
+    "hepha_lerobot",
+    "hepha_lerobot.datasets",
+    "hepha_lerobot.evaluation",
+    "hepha_lerobot.policies",
+    "hepha_lerobot.recording",
+    "hepha_lerobot.training",
+    "simulation",
+    "simulation.backends",
+    "simulation.backends.mujoco",
+]
+
+[tool.setuptools.package-data]
+"simulation.backends.mujoco" = [
+    "assets/*.xml",
+    "assets/meshes/*.stl",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra -p no:capture"
+testpaths = ["tests"]
+
+[tool.ruff]
+extend-exclude = ["doc", "hardware"]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
