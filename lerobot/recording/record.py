@@ -10,6 +10,7 @@ from hepha_lerobot.datasets import add_robot_frame, create_dataset
 
 from simulation import SimulationConfig, create_backend
 from simulation.base import parse_backend_options
+from simulation.view import _ensure_mjpython_on_macos, _parse_bool
 
 from .controllers import available_controllers, create_controller
 
@@ -44,7 +45,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--camera", default="head_camera")
     parser.add_argument("--task", default=DEFAULT_TASK)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--viewer", action="store_true")
+    parser.add_argument(
+        "--viewer",
+        nargs="?",
+        const=True,
+        default=False,
+        type=_parse_bool,
+        metavar="BOOL",
+        help="Open the native simulation viewer while recording",
+    )
+    parser.add_argument(
+        "--debug",
+        nargs="?",
+        const=True,
+        default=False,
+        type=_parse_bool,
+        metavar="BOOL",
+        help="Show collisions, camera axes, and IK target coordinate systems",
+    )
     parser.add_argument("--no-video", action="store_true")
     parser.add_argument("--push-to-hub", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
@@ -81,6 +99,7 @@ def record_dataset(args: argparse.Namespace) -> Path:
         fps=args.fps,
         render=True,
         viewer=args.viewer,
+        debug=args.debug,
         options=parse_backend_options(args.backend_option),
     )
     use_videos = not args.no_video
@@ -100,7 +119,13 @@ def record_dataset(args: argparse.Namespace) -> Path:
             for attempt in range(maximum_attempts):
                 if saved_episodes >= args.episodes:
                     break
-                controller.reset(episode_seed=args.seed + attempt)
+                attempt_seed = args.seed + attempt
+                controller.reset(episode_seed=attempt)
+                status = getattr(controller, "status", "controller reset")
+                print(
+                    f"Starting attempt {attempt + 1}/{maximum_attempts} "
+                    f"with seed {attempt_seed}: {status}"
+                )
                 recorded_frames = 0
                 for frame_index in range(frames_per_attempt):
                     progress = frame_index / (frames_per_attempt - 1)
@@ -158,6 +183,8 @@ def main() -> None:
     if args.list_controllers:
         print("\n".join(available_controllers(args.backend)))
         return
+    if args.viewer and args.backend == "mujoco":
+        _ensure_mjpython_on_macos("hepha_lerobot.recording.record")
     dataset_root = record_dataset(args)
     print(f"LeRobot dataset ready at {dataset_root}")
 

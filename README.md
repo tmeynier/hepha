@@ -478,6 +478,10 @@ simplifies the problem while preserving most of the robot's capabilities.
 
 **TODO:** add GIFS of Genesis AI robot
 
+TODO: mention about the complexity of the task: not always fetch the cube or open 
+drawer with the same hand, hand collaboration, moving in the right direction with 
+respect to hand 1 or 2, etc.
+
 ## Step 1: Model The Robot CAD
 
 First, I construct the 3D model of the robot.

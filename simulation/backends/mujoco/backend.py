@@ -33,7 +33,15 @@ ACTUATOR_NAMES = (
 COLLISION_GEOM_GROUP = 0
 VISUAL_GEOM_GROUP = 1
 CAMERA_FRAME_GEOM_GROUP = 2
+IK_TARGET_GEOM_GROUP = 3
 HIDDEN_MARKER_GEOM_GROUP = 5
+
+IK_TARGET_MARKER_PREFIXES = (
+    "hand_tip_marker_",
+    "drawer_target_marker_",
+    "above_drawer_target_marker_",
+    "drawer_close_target_marker_",
+)
 
 
 def default_model_path() -> Path:
@@ -56,8 +64,12 @@ class MujocoBackend(SimulationBackend):
         self.model_path = Path(configured_path) if configured_path else default_model_path()
         self.model = mujoco.MjModel.from_xml_path(str(self.model_path))
         self.data = mujoco.MjData(self.model)
+        self._configure_geom_groups()
         self._closed = False
         self._renderer: mujoco.Renderer | None = None
+        self._render_options = mujoco.MjvOption()
+        self._render_options.geomgroup[:] = False
+        self._render_options.geomgroup[VISUAL_GEOM_GROUP] = True
         self._viewer: Any | None = None
 
         self.actuator_ids = self._resolve_actuator_ids()
@@ -80,7 +92,7 @@ class MujocoBackend(SimulationBackend):
             )
         self.reset()
         if config.viewer:
-            self.open_viewer()
+            self.open_viewer(debug=config.debug)
 
     @classmethod
     def observation_features_for(
@@ -175,7 +187,11 @@ class MujocoBackend(SimulationBackend):
     def render(self) -> np.ndarray:
         if self._renderer is None:
             raise RuntimeError("Rendering was disabled for this simulation")
-        self._renderer.update_scene(self.data, camera=self.config.camera)
+        self._renderer.update_scene(
+            self.data,
+            camera=self.config.camera,
+            scene_option=self._render_options,
+        )
         return np.asarray(self._renderer.render(), dtype=np.uint8).copy()
 
     def get_observation(self, *, advance: bool = True) -> dict[str, Any]:
@@ -189,10 +205,7 @@ class MujocoBackend(SimulationBackend):
         observation[self.config.camera] = self.render()
         return observation
 
-    def _configure_viewer_groups(self, *, debug: bool) -> None:
-        if self._viewer is None:
-            raise RuntimeError("Viewer must be open before configuring visualization")
-
+    def _configure_geom_groups(self) -> None:
         floor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
         if floor_id >= 0:
             self.model.geom_group[floor_id] = VISUAL_GEOM_GROUP
@@ -201,17 +214,24 @@ class MujocoBackend(SimulationBackend):
             name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)
             if not name or "_marker_" not in name:
                 continue
-            self.model.geom_group[geom_id] = (
-                CAMERA_FRAME_GEOM_GROUP
-                if name.startswith("head_camera_marker_")
-                else HIDDEN_MARKER_GEOM_GROUP
-            )
+            if name.startswith("head_camera_marker_"):
+                group = CAMERA_FRAME_GEOM_GROUP
+            elif name.startswith(IK_TARGET_MARKER_PREFIXES):
+                group = IK_TARGET_GEOM_GROUP
+            else:
+                group = HIDDEN_MARKER_GEOM_GROUP
+            self.model.geom_group[geom_id] = group
+
+    def _configure_viewer_groups(self, *, debug: bool) -> None:
+        if self._viewer is None:
+            raise RuntimeError("Viewer must be open before configuring visualization")
 
         with self._viewer.lock():
             self._viewer.opt.geomgroup[:] = False
             self._viewer.opt.geomgroup[VISUAL_GEOM_GROUP] = True
             self._viewer.opt.geomgroup[COLLISION_GEOM_GROUP] = debug
             self._viewer.opt.geomgroup[CAMERA_FRAME_GEOM_GROUP] = debug
+            self._viewer.opt.geomgroup[IK_TARGET_GEOM_GROUP] = debug
             self._viewer.opt.geomgroup[HIDDEN_MARKER_GEOM_GROUP] = False
 
     def open_viewer(self, *, debug: bool = False) -> None:

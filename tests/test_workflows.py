@@ -10,6 +10,7 @@ from hepha_lerobot.evaluation.rollout import (
     parse_args as parse_rollout_args,
 )
 from hepha_lerobot.policies import available_policy_types
+from hepha_lerobot.recording.record import parse_args as parse_record_args
 from hepha_lerobot.training.train import build_train_command
 from hepha_lerobot.training.train import parse_args as parse_train_args
 
@@ -106,3 +107,14 @@ def test_training_forwards_only_unknown_lerobot_options(monkeypatch) -> None:
     assert args.policy_type == "act"
     assert args.steps == 2
     assert args.lerobot_args == ["--", "--policy.chunk_size=16"]
+
+
+def test_record_viewer_accepts_flag_or_explicit_boolean(monkeypatch) -> None:
+    monkeypatch.setattr("sys.argv", ["hepha-record", "--viewer"])
+    assert parse_record_args().viewer is True
+
+    monkeypatch.setattr("sys.argv", ["hepha-record", "--viewer", "false"])
+    assert parse_record_args().viewer is False
+
+    monkeypatch.setattr("sys.argv", ["hepha-record", "--debug", "true"])
+    assert parse_record_args().debug is True

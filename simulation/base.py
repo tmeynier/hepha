@@ -20,6 +20,7 @@ class SimulationConfig:
     fps: int = 30
     render: bool = True
     viewer: bool = False
+    debug: bool = False
     options: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

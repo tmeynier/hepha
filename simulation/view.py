@@ -30,7 +30,7 @@ def _find_environment_executable(name: str) -> str:
     return shutil.which(name) or name
 
 
-def _ensure_mjpython_on_macos() -> None:
+def _ensure_mjpython_on_macos(module: str = "simulation.view") -> None:
     if (
         sys.platform != "darwin"
         or Path(sys.executable).name == "mjpython"
@@ -40,7 +40,7 @@ def _ensure_mjpython_on_macos() -> None:
     launcher = _find_environment_executable("mjpython")
     if Path(launcher).is_file():
         os.environ[MJPYTHON_GUARD] = "1"
-        os.execv(launcher, [launcher, "-m", "simulation.view", *sys.argv[1:]])
+        os.execv(launcher, [launcher, "-m", module, *sys.argv[1:]])
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,6 +83,7 @@ def main() -> None:
         fps=args.fps,
         render=False,
         viewer=False,
+        debug=args.debug,
         options=parse_backend_options(args.backend_option),
     )
     try:
