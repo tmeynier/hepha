@@ -448,6 +448,15 @@ This is called distribution shift or compounding errors.
 
 Only RL can beat the expert, because it optmizes for it.
 
+Show the pyramid of robot data to show your reasoning
+
+Data augmentation — general umbrella term. You modify observations/actions while preserving the intended behavior: camera noise, lighting changes, object-position variations, action noise, etc.
+Trajectory perturbation / demonstration perturbation — specifically perturbing expert trajectories to expose the policy to imperfect states.
+Domain randomization — randomizing the simulation/environment: textures, lighting, camera pose, friction, masses, object positions, etc. Primarily useful for robustness and sim-to-real.
+Noise injection — explicitly adding noise to states, observations, or actions.
+Recovery data / recovery demonstrations — particularly important for BC: deliberately move the robot away from the perfect expert trajectory and provide the correct action to recover.
+DAgger — goes further: run the learned policy, let it reach states that the expert dataset didn't contain, then have an expert label the correct actions for those states.
+
 ### Robot Description (Upper Body)
 
 The robot's upper body has 15 Degrees of Freedom (DoF): three linear axes

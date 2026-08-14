@@ -11,6 +11,7 @@ dependencies = [
     "lerobot[core_scripts,training]==0.6.1",
     "mujoco>=3.3,<4",
     "numpy>=2.0,<2.3",
+    "pillow>=10,<13",
     "scipy>=1.14,<2",
 ]
 
