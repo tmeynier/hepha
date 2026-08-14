@@ -40,7 +40,6 @@
         <mesh name="drawer_7_link" file="meshes/drawer_7_link.stl" scale="0.001 0.001 0.001" />
         <mesh name="drawer_8_link" file="meshes/drawer_8_link.stl" scale="0.001 0.001 0.001" />
         <mesh name="drawer_9_link" file="meshes/drawer_9_link.stl" scale="0.001 0.001 0.001" />
-        <mesh name="cube_link" file="meshes/cube_link.stl" scale="0.001 0.001 0.001" />
         <mesh name="rack_structure_link" file="meshes/rack_structure_link.stl" scale="0.001 0.001 0.001" />
         <mesh name="storage_bin_link" file="meshes/storage_bin_link.stl" scale="0.001 0.001 0.001" />
     </asset>
@@ -330,18 +329,9 @@
         </body>
         <body name="cube_link" pos="0 0.10 0.055" euler="-0.0 0.0 -0.0">
             <freejoint name="cube_link_free_joint" />
-            <!-- Invisible rigid proxy retained for pose, target, and containment calculations. -->
-            <geom name="cube_link_collision_box_01_geom" type="box" pos="0 0 0" size="0.015 0.015 0.015" quat="1 0 0 0" rgba="1 0.05 0.02 0" group="0" contype="0" conaffinity="0" />
-            <geom name="cube_link_geom" type="mesh" mesh="cube_link" pos="0.0834701154596 -0.114219679555 -0.04" euler="0 0 0" rgba="1 0.05 0.02 0" group="1" contype="0" conaffinity="0" />
-            <!--
-              A 3 g foam cube. The radial flex shell is the rendered collision
-              object; its edge constraint permits visible face compression.
-            -->
+            <!-- The visible 3 cm rigid cube is also its sole collision geometry. -->
+            <geom name="cube_link_collision_box_01_geom" type="box" pos="0 0 0" size="0.015 0.015 0.015" quat="1 0 0 0" rgba="1 0.05 0.02 1" group="1" contype="1" conaffinity="1" condim="4" friction="2.5 0.06 0.004" solref="0.004 1" solimp="0.99 0.999 0.0001" />
             <inertial mass="0.0027" pos="0 0 0" fullinertia="4.5e-07 4.5e-07 4.5e-07 0 0 0" />
-            <flexcomp name="foam_cube" type="box" dof="radial" dim="3" count="3 3 3" spacing="0.015 0.015 0.015" radius="0" mass="0.0003" rgba="1 0.05 0.02 1">
-                <contact condim="6" friction="2.5 0.06 0.004" solref="0.004 1" solimp="0.985 0.998 0.00004" selfcollide="none" />
-                <edge equality="true" solref="0.012 1" solimp="0.93 0.985 0.0015 0.5 2" damping="2" />
-            </flexcomp>
         </body>
         <body name="cube_frame_marker" pos="0 0 -10" quat="1 0 0 0">
             <geom name="cube_frame_marker_x" type="capsule" fromto="0 0 0 0.055 0 0" size="0.002" rgba="1 0 0 1" contype="0" conaffinity="0" group="0" />

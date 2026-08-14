@@ -46,19 +46,24 @@ ROBOT_JOINTS = (*COMMON_JOINTS, *SIDE_JOINTS["l"], *SIDE_JOINTS["r"])
 
 FINGER_CLOSED = 0.0
 FINGER_OPEN = 1.0
-CUBE_GRASP = 0.28
-DRAWER_GRASP = 0.10
+CUBE_GRASP = 0.36
+DRAWER_GRASP = 0.05
+IDLE_FOREARM_DRAWER_PULL_POSITION = -0.25
+HANDOFF_DONOR_ARM_ELEVATION_RAD = 0.5
 CONTACT_MARGIN_M = 0.005
-GRASP_CONTACT_TOLERANCE_M = 0.016
-MAX_CUBE_FINGER_PENETRATION_M = 0.020
-IK_POSITION_TOLERANCE_M = 0.010
-IK_ORIENTATION_TOLERANCE_DEG = 30.0
-MIN_DRAWER_OPENING_M = 0.064
-MAX_DRAWER_CLOSED_OPENING_M = 0.003
+MIN_DRAWER_OPENING_M = 0.020
+MAX_DRAWER_CLOSED_OPENING_M = 0.010
+CUBE_LIFT_CHECK_M = 0.020
+CUBE_HAND_DISTANCE_M = 0.050
 CUBE_SPAWN_RADIUS_M = 0.10
-CUBE_GRASP_APPROACH_HEIGHT_M = 0.10
+CUBE_GRASP_APPROACH_HEIGHT_M = 0.13
 DRAWER_APPROACH_DISTANCE_M = 0.07
+DRAWER_CLOSE_APPROACH_DISTANCE_M = 0.05
+DRAWER_TARGET_Z_OFFSET_M = -0.01
 DRAWER_PUSH_MARGIN_M = 0.03
+CUBE_PLACE_HANDLE_Y_OFFSET_M = -0.05
+CUBE_PLACE_HANDLE_Z_OFFSET_M = 0.07
+TOP_ROW_CUBE_PLACE_CLEARANCE_M = 0.04
 
 IK_TARGET_MARKERS = (
     "hand_tip_marker",
@@ -181,6 +186,12 @@ def _closest_hand(
     return min(distances, key=distances.__getitem__)
 
 
+def _drawer_is_center(drawer_index: int) -> bool:
+    if not 1 <= drawer_index <= 9:
+        raise ValueError(f"Drawer index must be in [1, 9], got {drawer_index}")
+    return (drawer_index - 1) % 3 == 1
+
+
 def _cube_grasp_target(
     model: mujoco.MjModel, data: mujoco.MjData, side: Side
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -231,22 +242,63 @@ def _drawer_hand_target_pose(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return a live target 7 cm in front of the drawer-handle center."""
 
-    handle_center, drawer_rotation = drawer_handle_pose(model, data, drawer_index)
+    handle_center, hand_rotation = _drawer_handle_target_pose(
+        model, data, drawer_index
+    )
     drawer_joint = _joint_id(model, f"base_link_base_drawer_{drawer_index}_joint")
     inward_axis = _normalize(data.xaxis[drawer_joint])
     target = handle_center - inward_axis * DRAWER_APPROACH_DISTANCE_M
+    target[2] += DRAWER_TARGET_Z_OFFSET_M
+    return target, hand_rotation
+
+
+def _drawer_handle_target_pose(
+    model: mujoco.MjModel, data: mujoco.MjData, drawer_index: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return a live hand frame at the exact center of the drawer handle."""
+
+    handle_center, drawer_rotation = drawer_handle_pose(model, data, drawer_index)
     hand_rotation = _frame_from_xz(
         drawer_rotation[:, 2], drawer_rotation[:, 0]
     )
-    return target, hand_rotation
+    return handle_center, hand_rotation
+
+
+def _drawer_close_target_pose(
+    model: mujoco.MjModel, data: mujoco.MjData, drawer_index: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return a live closing target 5 cm in front of the handle center."""
+
+    handle_center, hand_rotation = _drawer_handle_target_pose(
+        model, data, drawer_index
+    )
+    drawer_joint = _joint_id(model, f"base_link_base_drawer_{drawer_index}_joint")
+    inward_axis = _normalize(data.xaxis[drawer_joint])
+    return (
+        handle_center - inward_axis * DRAWER_CLOSE_APPROACH_DISTANCE_M,
+        hand_rotation,
+    )
+
+
+def _drawer_gripper_rotation(rotation: np.ndarray, side: Side) -> np.ndarray:
+    """Orient the mirrored grippers so their fixed finger stays above the handle."""
+
+    side_rotation = (
+        np.diag((-1.0, -1.0, 1.0))
+        if side == "r"
+        else np.diag((1.0, -1.0, -1.0))
+    )
+    return rotation @ side_rotation
 
 
 def _cube_above_drawer_pose(
     model: mujoco.MjModel, data: mujoco.MjData, drawer_index: int
 ) -> tuple[np.ndarray, np.ndarray]:
     target, drawer_rotation = drawer_handle_pose(model, data, drawer_index)
-    target[1] -= 0.06
-    target[2] += 0.09
+    target[1] += CUBE_PLACE_HANDLE_Y_OFFSET_M
+    target[2] += CUBE_PLACE_HANDLE_Z_OFFSET_M
+    if drawer_index <= 3:
+        target[2] += TOP_ROW_CUBE_PLACE_CLEARANCE_M
     drawer_x = drawer_rotation[:, 0].copy()
     drawer_x[2] = 0.0
     if np.linalg.norm(drawer_x) < 1e-9:
@@ -396,6 +448,7 @@ class CollisionAwareIK:
         reset_drawers: bool = True,
         crossed_axes: bool = False,
         align_blue_axis: bool = False,
+        directed_axes: bool = False,
         position_weight: float = 1000.0,
         orientation_weight: float = 50.0,
         protect_drawers: bool = False,
@@ -459,7 +512,14 @@ class CollisionAwareIK:
         def objective(candidate: np.ndarray) -> float:
             position, rotation, collision_cost, _ = evaluate(candidate)
             position_error = position - target
-            if crossed_axes:
+            if directed_axes:
+                red_error = rotation[:, 0] - target_rotation[:, 0]
+                blue_error = (
+                    rotation[:, 2] - target_rotation[:, 2]
+                    if align_blue_axis
+                    else np.zeros(3)
+                )
+            elif crossed_axes:
                 red_error = np.cross(rotation[:, 0], target_rotation[:, 2])
                 blue_error = np.cross(rotation[:, 2], target_rotation[:, 0])
             else:
@@ -497,7 +557,12 @@ class CollisionAwareIK:
             options={"maxiter": self.local_maxiter, "ftol": 1e-12},
         )
         position, rotation, _, collisions = evaluate(local_result.x)
-        if crossed_axes:
+        if directed_axes:
+            axis_pairs = (
+                (rotation[:, 0], target_rotation[:, 0]),
+                (rotation[:, 2], target_rotation[:, 2]),
+            ) if align_blue_axis else ((rotation[:, 0], target_rotation[:, 0]),)
+        elif crossed_axes:
             axis_pairs = (
                 (rotation[:, 0], target_rotation[:, 2]),
                 (rotation[:, 2], target_rotation[:, 0]),
@@ -513,7 +578,13 @@ class CollisionAwareIK:
             float(
                 np.degrees(
                     np.arccos(
-                        np.clip(abs(float(_normalize(actual) @ _normalize(desired))), 0.0, 1.0)
+                        np.clip(
+                            float(_normalize(actual) @ _normalize(desired))
+                            if directed_axes
+                            else abs(float(_normalize(actual) @ _normalize(desired))),
+                            -1.0 if directed_axes else 0.0,
+                            1.0,
+                        )
                     )
                 )
             )
@@ -558,53 +629,21 @@ def _randomize_cube(
     data.qvel[model.jnt_dofadr[joint_id] : model.jnt_dofadr[joint_id] + 6] = 0.0
 
 
-def _min_geom_distance(
-    model: mujoco.MjModel,
-    data: mujoco.MjData,
-    source_names: tuple[str, ...],
-    target_name: str,
-) -> float:
-    target = _named_id(model, mujoco.mjtObj.mjOBJ_GEOM, target_name)
-    return min(
-        float(
-            mujoco.mj_geomDistance(
-                model,
-                data,
-                _named_id(model, mujoco.mjtObj.mjOBJ_GEOM, source),
-                target,
-                0.1,
-                None,
-            )
-        )
-        for source in source_names
+def _cube_position(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
+    cube_id = _named_id(
+        model, mujoco.mjtObj.mjOBJ_GEOM, "cube_link_collision_box_01_geom"
     )
+    return data.geom_xpos[cube_id].copy()
 
 
-def cube_grasp_ready(
+def _cube_near_hand(
     model: mujoco.MjModel, data: mujoco.MjData, side: Side
-) -> tuple[bool, tuple[float, float]]:
-    target = "cube_link_collision_box_01_geom"
-    fixed = _min_geom_distance(
-        model, data, (f"hand_{side}_link_collision_box_03_geom",), target
-    )
-    moving = _min_geom_distance(
-        model,
-        data,
-        (
-            f"finger_{side}_link_collision_box_02_geom",
-            f"finger_{side}_link_collision_box_03_geom",
-        ),
-        target,
-    )
-    touching = fixed <= GRASP_CONTACT_TOLERANCE_M and moving <= GRASP_CONTACT_TOLERANCE_M
-    valid_depth = (
-        fixed >= -MAX_CUBE_FINGER_PENETRATION_M
-        and moving >= -MAX_CUBE_FINGER_PENETRATION_M
-    )
-    return touching and valid_depth, (fixed, moving)
+) -> tuple[bool, float]:
+    distance = float(np.linalg.norm(_cube_position(model, data) - hand_pose(model, data, side)[0]))
+    return distance <= CUBE_HAND_DISTANCE_M, distance
 
 
-def _cube_fully_inside_drawer(
+def _cube_center_inside_drawer(
     model: mujoco.MjModel, data: mujoco.MjData, drawer_index: int
 ) -> bool:
     floor_id = _named_id(
@@ -612,28 +651,16 @@ def _cube_fully_inside_drawer(
         mujoco.mjtObj.mjOBJ_GEOM,
         f"drawer_{drawer_index}_link_collision_box_02_geom",
     )
-    cube_id = _named_id(
-        model, mujoco.mjtObj.mjOBJ_GEOM, "cube_link_collision_box_01_geom"
-    )
     floor_rotation = data.geom_xmat[floor_id].reshape(3, 3)
-    cube_rotation = data.geom_xmat[cube_id].reshape(3, 3)
-    cube_corners = []
-    for signs in np.ndindex(2, 2, 2):
-        direction = np.array([1.0 if sign else -1.0 for sign in signs])
-        world_corner = (
-            data.geom_xpos[cube_id]
-            + cube_rotation @ (model.geom_size[cube_id] * direction)
-        )
-        cube_corners.append(
-            floor_rotation.T @ (world_corner - data.geom_xpos[floor_id])
-        )
-    local_corners = np.asarray(cube_corners)
-    horizontal_limit = model.geom_size[floor_id, :2] - 0.002
-    inside_xy = bool(np.all(np.abs(local_corners[:, :2]) <= horizontal_limit))
+    local_center = floor_rotation.T @ (
+        _cube_position(model, data) - data.geom_xpos[floor_id]
+    )
+    inside_xy = bool(
+        np.all(np.abs(local_center[:2]) <= model.geom_size[floor_id, :2])
+    )
     floor_top = float(model.geom_size[floor_id, 2])
-    cube_bottom = float(local_corners[:, 2].min())
-    cube_top = float(local_corners[:, 2].max())
-    return inside_xy and floor_top - 0.003 <= cube_bottom and cube_top <= floor_top + 0.055
+    inside_height = floor_top - 0.005 <= local_center[2] <= floor_top + 0.040
+    return inside_xy and inside_height
 
 
 @dataclass
@@ -691,6 +718,10 @@ class MujocoIKController:
         self.initial_targets: dict[str, float] = {}
         self.ik_targets: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self.cube_approach_vertical_qpos: float | None = None
+        self.cube_initial_z: float | None = None
+        self.drawer_close_cnc_start: float | None = None
+        self.handoff_target: np.ndarray | None = None
+        self.handoff_donor: Side | None = None
         self.episode_seed = seed
         self.done = False
         self.successful = False
@@ -728,12 +759,16 @@ class MujocoIKController:
         self.initial_targets = {
             name: _joint_qpos(self.model, self.data, name) for name in ROBOT_JOINTS
         }
+        self.cube_initial_z = float(_cube_position(self.model, self.data)[2])
         self.drawer_index = int(rng.integers(1, 10))
         self._initialize_ik_targets()
         self.episode_seed = episode_seed
-        self.phase = "pre_cube_view"
+        self.phase = "initialize_cnc"
         self.motion = None
         self.cube_approach_vertical_qpos = None
+        self.drawer_close_cnc_start = None
+        self.handoff_target = None
+        self.handoff_donor = None
         self.done = False
         self.successful = False
         handoff = self.cube_hand != self.placement_hand
@@ -758,16 +793,23 @@ class MujocoIKController:
         )
 
     def _refresh_drawer_targets(self) -> None:
-        """Keep IK 2 and IK 4 at the live pre-handle approach pose."""
+        """Keep the opening and closing approach frames live with the drawer."""
 
-        target, rotation = _drawer_hand_target_pose(
+        opening_target, opening_rotation = _drawer_hand_target_pose(
             self.model, self.data, self.drawer_index
         )
-        for target_name in ("drawer_open", "drawer_close"):
-            self.ik_targets[target_name] = (target.copy(), rotation.copy())
+        closing_target, closing_rotation = _drawer_close_target_pose(
+            self.model, self.data, self.drawer_index
+        )
+        self.ik_targets["drawer_open"] = (opening_target, opening_rotation)
+        self.ik_targets["drawer_close"] = (closing_target, closing_rotation)
         if self.backend.config.debug:
-            self._set_ik_target("drawer_target_marker", target, rotation)
-            self._set_ik_target("drawer_close_target_marker", target, rotation)
+            self._set_ik_target(
+                "drawer_target_marker", opening_target, opening_rotation
+            )
+            self._set_ik_target(
+                "drawer_close_target_marker", closing_target, closing_rotation
+            )
             mujoco.mj_forward(self.model, self.data)
             self.backend.sync_viewer()
 
@@ -809,12 +851,6 @@ class MujocoIKController:
         cube_bottom, desired_cube_rotation = _cube_above_drawer_pose(
             self.model, opened_data, self.drawer_index
         )
-        cube_rotation = self.data.geom_xmat[cube_id].reshape(3, 3).copy()
-        _, placement_grasp_rotation = _cube_grasp_target(
-            self.model, self.data, self.placement_hand
-        )
-        relative_rotation = placement_grasp_rotation.T @ cube_rotation
-        cube_place_rotation = desired_cube_rotation @ relative_rotation.T
         cube_place_target = (
             cube_bottom
             + self.model.geom_size[cube_id, 2] * desired_cube_rotation[:, 2]
@@ -823,11 +859,14 @@ class MujocoIKController:
         drawer_target, drawer_rotation = _drawer_hand_target_pose(
             self.model, self.data, self.drawer_index
         )
+        drawer_close_target, drawer_close_rotation = _drawer_close_target_pose(
+            self.model, self.data, self.drawer_index
+        )
         self.ik_targets = {
             "cube_grasp": (cube_target, grasp_rotation),
             "drawer_open": (drawer_target.copy(), drawer_rotation.copy()),
-            "cube_place": (cube_place_target, cube_place_rotation),
-            "drawer_close": (drawer_target.copy(), drawer_rotation.copy()),
+            "cube_place": (cube_place_target, desired_cube_rotation),
+            "drawer_close": (drawer_close_target, drawer_close_rotation),
         }
         if self.backend.config.debug:
             for marker_body, (position, rotation) in zip(
@@ -838,7 +877,11 @@ class MujocoIKController:
             self.backend.sync_viewer()
 
     def _select_post_drawer_hands_and_targets(self) -> None:
-        """Select hands from their live poses after the drawer has been opened."""
+        """Select live hands and refresh only the cube-grasp target.
+
+        The cube-placement frame is created once during reset from the planned
+        open-drawer pose and intentionally remains fixed for the whole episode.
+        """
 
         cube_id = _named_id(
             self.model, mujoco.mjtObj.mjOBJ_GEOM, "cube_link_collision_box_01_geom"
@@ -856,29 +899,10 @@ class MujocoIKController:
         cube_target = cube_target + np.array(
             [0.0, 0.0, CUBE_GRASP_APPROACH_HEIGHT_M]
         )
-        cube_bottom, desired_cube_rotation = _cube_above_drawer_pose(
-            self.model, self.data, self.drawer_index
-        )
-        _, placement_grasp_rotation = _cube_grasp_target(
-            self.model, self.data, self.placement_hand
-        )
-        cube_rotation = self.data.geom_xmat[cube_id].reshape(3, 3).copy()
-        relative_rotation = placement_grasp_rotation.T @ cube_rotation
-        cube_place_rotation = desired_cube_rotation @ relative_rotation.T
-        cube_place_target = (
-            cube_bottom
-            + self.model.geom_size[cube_id, 2] * desired_cube_rotation[:, 2]
-        )
         self.ik_targets["cube_grasp"] = (cube_target, cube_grasp_rotation)
-        self.ik_targets["cube_place"] = (cube_place_target, cube_place_rotation)
 
         if self.backend.config.debug:
             self._set_ik_target("hand_tip_marker", cube_target, cube_grasp_rotation)
-            self._set_ik_target(
-                "above_drawer_target_marker",
-                cube_place_target,
-                cube_place_rotation,
-            )
             mujoco.mj_forward(self.model, self.data)
             self.backend.sync_viewer()
 
@@ -936,7 +960,7 @@ class MujocoIKController:
         rotation: np.ndarray,
         seed_offset: int,
         **kwargs: object,
-    ) -> dict[str, float] | None:
+    ) -> dict[str, float]:
         solution = self.ik.solve(
             side=side,
             target=target,
@@ -944,28 +968,40 @@ class MujocoIKController:
             seed=self.seed + self.episode_seed + seed_offset,
             **kwargs,
         )
-        # TEMPORARILY DISABLED FOR DEBUGGING:
-        # if (
-        #     solution.error_m > IK_POSITION_TOLERANCE_M
-        #     or solution.orientation_error_deg > IK_ORIENTATION_TOLERANCE_DEG
-        # ):
-        #     self._fail(
-        #         self.phase,
-        #         f"IK target not reached (position error={solution.error_m:.4f} m, "
-        #         f"orientation error={solution.orientation_error_deg:.1f} deg; "
-        #         f"limits={IK_POSITION_TOLERANCE_M:.3f} m/"
-        #         f"{IK_ORIENTATION_TOLERANCE_DEG:.1f} deg)",
-        #     )
-        #     return None
         return dict(zip(solution.joint_names, solution.joint_values, strict=True))
 
     def _rest_targets(self, side: Side) -> dict[str, float]:
-        targets = {name: self.initial_targets[name] for name in SIDE_JOINTS[side]}
-        arm_joint = f"forearm_{side}_link_forearm_{side}_arm_{side}_joint"
-        joint_id = _joint_id(self.model, arm_joint)
+        """Return the exact horizontal arm pose captured during initialization."""
+
+        return {name: self.initial_targets[name] for name in SIDE_JOINTS[side]}
+
+    def _handoff_donor_rest_targets(self, side: Side) -> dict[str, float]:
+        """Return a raised post-handoff pose without moving the shared CNC axes."""
+
+        targets = self._rest_targets(side)
+        arm_joint = SIDE_JOINTS[side][2]
+        arm_id = _joint_id(self.model, arm_joint)
+        elevation = HANDOFF_DONOR_ARM_ELEVATION_RAD * (1.0 if side == "l" else -1.0)
         targets[arm_joint] = float(
-            self.model.jnt_range[joint_id, 1 if side == "l" else 0]
+            np.clip(elevation, *self.model.jnt_range[arm_id])
         )
+        return targets
+
+    def _initial_view_targets(self) -> dict[str, float]:
+        """Return the full pre-first-IK pose used to view the storage bin."""
+
+        targets = self.initial_targets.copy()
+        common_targets = (
+            (COMMON_JOINTS[0], 1.0),
+            (COMMON_JOINTS[1], 0.5),
+            (COMMON_JOINTS[2], 0.5),
+        )
+        for joint_name, normalized_position in common_targets:
+            joint_id = _joint_id(self.model, joint_name)
+            low, high = self.model.jnt_range[joint_id]
+            targets[joint_name] = float(
+                low + normalized_position * (high - low)
+            )
         return targets
 
     def _dispatch_phase(self) -> None:
@@ -976,15 +1012,17 @@ class MujocoIKController:
         lateral_id = _joint_id(self.model, lateral)
         vertical_id = _joint_id(self.model, vertical)
 
-        if self.phase == "pre_cube_view":
-            self._start_motion({}, after="open")
-        elif self.phase == "open":
-            self._start_motion({}, after="stage", fingers={"l": FINGER_OPEN, "r": FINGER_OPEN})
-        elif self.phase == "stage":
-            lateral_center = float(np.mean(self.model.jnt_range[lateral_id]))
+        if self.phase == "initialize_cnc":
             self._start_motion(
-                {lateral: lateral_center},
+                self._initial_view_targets(),
+                after="open_before_first_ik",
+                fingers={"l": FINGER_CLOSED, "r": FINGER_CLOSED},
+            )
+        elif self.phase == "open_before_first_ik":
+            self._start_motion(
+                self._initial_view_targets(),
                 after="drawer_ik",
+                duration_scale=0.4,
                 fingers={"l": FINGER_OPEN, "r": FINGER_OPEN},
             )
         elif self.phase == "cube_ik":
@@ -1049,16 +1087,6 @@ class MujocoIKController:
             )
         elif self.phase == "cube_clearance":
             assert self.cube_hand is not None
-            # TEMPORARILY DISABLED FOR DEBUGGING:
-            # ready, gaps = cube_grasp_ready(self.model, self.data, self.cube_hand)
-            # if not ready:
-            #     self._fail(
-            #         "cube grasp",
-            #         "both finger pads did not contact the cube within the permitted "
-            #         f"gap/compression (fixed={gaps[0]:.4f} m, "
-            #         f"moving={gaps[1]:.4f} m)",
-            #     )
-            #     return
             if self.cube_approach_vertical_qpos is None:
                 raise RuntimeError("Cube approach height was not captured before grasping")
             self._start_motion(
@@ -1068,6 +1096,16 @@ class MujocoIKController:
             )
         elif self.phase == "return_without_base":
             assert self.cube_hand is not None
+            if self.cube_initial_z is None:
+                raise RuntimeError("Initial cube height was not captured")
+            cube_z = float(_cube_position(self.model, self.data)[2])
+            if cube_z < self.cube_initial_z + CUBE_LIFT_CHECK_M:
+                self._fail(
+                    "cube grasp",
+                    f"cube was not lifted (initial z={self.cube_initial_z:.4f} m, "
+                    f"current z={cube_z:.4f} m)",
+                )
+                return
             targets = {name: value for name, value in self.initial_targets.items() if name != base}
             self._start_motion(
                 targets, after="lift_cube", fingers={self.cube_hand: CUBE_GRASP}
@@ -1093,9 +1131,38 @@ class MujocoIKController:
                 after=(
                     "cube_above_drawer"
                     if self.cube_hand == self.placement_hand
-                    else "handoff_receiver_ik"
+                    else "handoff_donor_ik"
                 ),
                 fingers={self.cube_hand: CUBE_GRASP},
+            )
+        elif self.phase == "handoff_donor_ik":
+            assert self.cube_hand is not None and self.placement_hand is not None
+            donor = self.cube_hand
+            receiver = self.placement_hand
+            donor_position, donor_rotation = hand_pose(self.model, self.data, donor)
+            receiver_position, _ = hand_pose(self.model, self.data, receiver)
+            self.handoff_target = 0.5 * (donor_position + receiver_position)
+            targets = self._solve_to(
+                side=donor,
+                target=self.handoff_target,
+                rotation=donor_rotation,
+                seed_offset=2,
+                joint_names=SIDE_JOINTS[donor],
+                reset_drawers=False,
+                align_blue_axis=True,
+                directed_axes=True,
+                position_weight=100_000.0,
+                orientation_weight=10.0,
+                finger_position=CUBE_GRASP,
+                protect_drawers=True,
+                protect_other_hand=True,
+            )
+            if targets is None:
+                return
+            self._start_motion(
+                targets,
+                after="handoff_receiver_ik",
+                fingers={donor: CUBE_GRASP, receiver: FINGER_OPEN},
             )
         elif self.phase == "handoff_receiver_ik":
             assert self.cube_hand is not None and self.placement_hand is not None
@@ -1114,7 +1181,7 @@ class MujocoIKController:
                 side=receiver,
                 target=target,
                 rotation=rotation,
-                seed_offset=2,
+                seed_offset=3,
                 joint_names=SIDE_JOINTS[receiver],
                 reset_drawers=False,
                 align_blue_axis=True,
@@ -1134,6 +1201,26 @@ class MujocoIKController:
             assert self.cube_hand is not None and self.placement_hand is not None
             self._start_motion(
                 {},
+                after="handoff_verify",
+                fingers={
+                    self.cube_hand: CUBE_GRASP,
+                    self.placement_hand: CUBE_GRASP,
+                },
+            )
+        elif self.phase == "handoff_verify":
+            assert self.cube_hand is not None and self.placement_hand is not None
+            ready, distance = _cube_near_hand(
+                self.model, self.data, self.placement_hand
+            )
+            if not ready:
+                self._fail(
+                    "cube handoff",
+                    f"cube is {distance:.4f} m from the receiving hand; required "
+                    f"at most {CUBE_HAND_DISTANCE_M:.4f} m",
+                )
+                return
+            self._start_motion(
+                {},
                 after="handoff_release",
                 fingers={
                     self.cube_hand: CUBE_GRASP,
@@ -1144,21 +1231,35 @@ class MujocoIKController:
             assert self.cube_hand is not None and self.placement_hand is not None
             donor = self.cube_hand
             receiver = self.placement_hand
+            self.handoff_donor = donor
             self.cube_hand = receiver
             self._start_motion(
                 {},
-                after="cube_above_drawer",
+                after="handoff_donor_rest",
                 fingers={donor: FINGER_OPEN, receiver: CUBE_GRASP},
+            )
+        elif self.phase == "handoff_donor_rest":
+            assert (
+                self.handoff_donor is not None
+                and self.cube_hand is not None
+                and self.handoff_donor != self.cube_hand
+            )
+            self._start_motion(
+                self._handoff_donor_rest_targets(self.handoff_donor),
+                after="cube_above_drawer",
+                fingers={self.handoff_donor: FINGER_CLOSED, self.cube_hand: CUBE_GRASP},
             )
         elif self.phase == "drawer_ik":
             assert self.drawer_hand is not None
             target, rotation = self.ik_targets["drawer_open"]
+            gripper_rotation = _drawer_gripper_rotation(rotation, self.drawer_hand)
             targets = self._solve_to(
                 side=self.drawer_hand,
                 target=target,
-                rotation=rotation,
+                rotation=gripper_rotation,
                 seed_offset=1,
                 align_blue_axis=True,
+                directed_axes=True,
                 position_weight=40_000.0,
                 orientation_weight=50.0,
                 finger_position=FINGER_OPEN,
@@ -1200,73 +1301,45 @@ class MujocoIKController:
             self._start_motion({}, after="pull_drawer", fingers={self.drawer_hand: DRAWER_GRASP})
         elif self.phase == "pull_drawer":
             assert self.drawer_hand is not None
-            drawer_joint = f"base_link_base_drawer_{self.drawer_index}_joint"
-            drawer_id = _joint_id(self.model, drawer_joint)
-            opening = max(
-                0.0,
-                _joint_qpos(self.model, self.data, drawer_joint)
-                - float(self.model.jnt_range[drawer_id, 0]),
-            )
-            limit = max(
-                float(self.model.jnt_range[base_id, 0]),
-                float(self.model.jnt_range[base_id, 1]) - 0.05,
-            )
-            target = min(
-                _joint_qpos(self.model, self.data, base) + opening + 0.03,
-                limit,
-            )
+            idle_hand: Side = "r" if self.drawer_hand == "l" else "l"
+            idle_forearm = SIDE_JOINTS[idle_hand][1]
             self._start_motion(
-                {base: target},
+                {
+                    base: float(self.model.jnt_range[base_id, 1]),
+                    idle_forearm: IDLE_FOREARM_DRAWER_PULL_POSITION,
+                },
                 after="release_open_drawer",
                 fingers={self.drawer_hand: DRAWER_GRASP},
             )
         elif self.phase == "release_open_drawer":
             assert self.drawer_hand is not None
-            # TEMPORARILY DISABLED FOR DEBUGGING:
-            # opening = self._drawer_opening()
-            # if opening < MIN_DRAWER_OPENING_M:
-            #     self._fail(
-            #         "drawer opening",
-            #         f"drawer opened {opening:.4f} m; required at least "
-            #         f"{MIN_DRAWER_OPENING_M:.4f} m",
-            #     )
-            #     return
+            opening = self._drawer_opening()
+            if opening < MIN_DRAWER_OPENING_M:
+                self._fail(
+                    "drawer opening",
+                    f"drawer opened {opening:.4f} m; required at least "
+                    f"{MIN_DRAWER_OPENING_M:.4f} m",
+                )
+                return
             self._start_motion(
                 {},
-                after="open_drawer_clearance",
-                duration_scale=0.4,
-                fingers={self.drawer_hand: FINGER_OPEN},
-            )
-        elif self.phase == "open_drawer_clearance":
-            assert self.drawer_hand is not None
-            approach_position = self.ik_targets["drawer_open"][0]
-            hand_position, _ = hand_pose(self.model, self.data, self.drawer_hand)
-            target = np.clip(
-                _joint_qpos(self.model, self.data, base)
-                + float(approach_position[1] - hand_position[1]),
-                *self.model.jnt_range[base_id],
-            )
-            self._start_motion(
-                {base: float(target)},
                 after="drawer_hand_rest",
-                duration_scale=0.6,
+                duration_scale=0.4,
                 fingers={self.drawer_hand: FINGER_OPEN},
             )
         elif self.phase == "drawer_hand_rest":
             assert self.drawer_hand is not None and self.cube_hand is not None
-            # TEMPORARILY DISABLED FOR DEBUGGING:
-            # opening = self._drawer_opening()
-            # if opening < MIN_DRAWER_OPENING_M:
-            #     self._fail(
-            #         "drawer release",
-            #         f"drawer rebounded to {opening:.4f} m open; required at least "
-            #         f"{MIN_DRAWER_OPENING_M:.4f} m",
-            #     )
-            #     return
             self._start_motion(
-                self._rest_targets(self.drawer_hand),
+                self._initial_view_targets(),
+                after="view_cube",
+                fingers={"l": FINGER_OPEN, "r": FINGER_OPEN},
+            )
+        elif self.phase == "view_cube":
+            self._start_motion(
+                self._initial_view_targets(),
                 after="cube_ik",
-                fingers={self.drawer_hand: FINGER_OPEN},
+                duration_scale=0.5,
+                fingers={"l": FINGER_OPEN, "r": FINGER_OPEN},
             )
         elif self.phase == "cube_above_drawer":
             assert self.cube_hand is not None
@@ -1278,6 +1351,7 @@ class MujocoIKController:
                 seed_offset=3,
                 reset_drawers=False,
                 align_blue_axis=True,
+                directed_axes=True,
                 position_weight=25_000.0,
                 orientation_weight=20.0,
                 finger_position=CUBE_GRASP,
@@ -1286,10 +1360,11 @@ class MujocoIKController:
             )
             if targets is None:
                 return
-            fingers: dict[Side, float] = {self.cube_hand: CUBE_GRASP}
-            if self.drawer_hand is not None:
-                fingers[self.drawer_hand] = FINGER_CLOSED
-            self._start_motion(targets, after="drop_cube", fingers=fingers)
+            self._start_motion(
+                targets,
+                after="drop_cube",
+                fingers={self.cube_hand: CUBE_GRASP},
+            )
         elif self.phase == "drop_cube":
             assert self.cube_hand is not None
             self._start_motion(
@@ -1300,16 +1375,15 @@ class MujocoIKController:
             )
         elif self.phase == "cube_hand_rest":
             assert self.cube_hand is not None
-            # TEMPORARILY DISABLED FOR DEBUGGING:
-            # mujoco.mj_forward(self.model, self.data)
-            # if not _cube_fully_inside_drawer(
-            #     self.model, self.data, self.drawer_index
-            # ):
-            #     self._fail(
-            #         "cube release",
-            #         f"cube is not fully inside drawer {self.drawer_index}",
-            #     )
-            #     return
+            mujoco.mj_forward(self.model, self.data)
+            if not _cube_center_inside_drawer(
+                self.model, self.data, self.drawer_index
+            ):
+                self._fail(
+                    "cube release",
+                    f"cube is not fully inside drawer {self.drawer_index}",
+                )
+                return
             self._start_motion(
                 self._rest_targets(self.cube_hand),
                 after="center_lateral",
@@ -1333,23 +1407,33 @@ class MujocoIKController:
             )
         elif self.phase == "choose_closing_hand":
             target, _ = self.ik_targets["drawer_close"]
-            self.drawer_hand = _closest_hand(self.model, self.data, target)
+            if _drawer_is_center(self.drawer_index):
+                closing_rng = np.random.default_rng(
+                    np.random.SeedSequence(
+                        [self.seed, self.episode_seed, self.drawer_index, 4]
+                    )
+                )
+                self.drawer_hand = ("l", "r")[int(closing_rng.integers(0, 2))]
+            else:
+                self.drawer_hand = _closest_hand(self.model, self.data, target)
             self._start_motion(
                 {}, after="close_drawer_ik", fingers={self.drawer_hand: FINGER_CLOSED}
             )
         elif self.phase == "close_drawer_ik":
             assert self.drawer_hand is not None
             target, rotation = self.ik_targets["drawer_close"]
+            gripper_rotation = _drawer_gripper_rotation(rotation, self.drawer_hand)
             drawer_joint = f"base_link_base_drawer_{self.drawer_index}_joint"
             drawer_id = _joint_id(self.model, drawer_joint)
             drawer_travel = float(np.ptp(self.model.jnt_range[drawer_id]))
             targets = self._solve_to(
                 side=self.drawer_hand,
                 target=target,
-                rotation=rotation,
+                rotation=gripper_rotation,
                 seed_offset=4,
                 reset_drawers=False,
                 align_blue_axis=True,
+                directed_axes=True,
                 position_weight=40_000.0,
                 orientation_weight=10.0,
                 finger_position=FINGER_CLOSED,
@@ -1357,7 +1441,7 @@ class MujocoIKController:
                 joint_bounds={
                     base: (
                         float(self.model.jnt_range[base_id, 0])
-                        + DRAWER_APPROACH_DISTANCE_M
+                        + DRAWER_CLOSE_APPROACH_DISTANCE_M
                         + drawer_travel
                         + DRAWER_PUSH_MARGIN_M,
                         float(self.model.jnt_range[base_id, 1]),
@@ -1368,34 +1452,20 @@ class MujocoIKController:
                 return
             self._start_motion(
                 targets,
-                after="approach_drawer_for_closing",
-                fingers={self.drawer_hand: FINGER_CLOSED},
-            )
-        elif self.phase == "approach_drawer_for_closing":
-            assert self.drawer_hand is not None
-            handle_position, _ = drawer_handle_pose(
-                self.model, self.data, self.drawer_index
-            )
-            hand_position, _ = hand_pose(self.model, self.data, self.drawer_hand)
-            target = np.clip(
-                _joint_qpos(self.model, self.data, base)
-                + float(handle_position[1] - hand_position[1]),
-                *self.model.jnt_range[base_id],
-            )
-            self._start_motion(
-                {base: float(target)},
                 after="push_drawer",
                 fingers={self.drawer_hand: FINGER_CLOSED},
             )
         elif self.phase == "push_drawer":
             assert self.drawer_hand is not None
+            self.drawer_close_cnc_start = _joint_qpos(self.model, self.data, base)
             drawer_joint = f"base_link_base_drawer_{self.drawer_index}_joint"
             drawer_id = _joint_id(self.model, drawer_joint)
             delta = _joint_qpos(self.model, self.data, drawer_joint) - float(
                 self.model.jnt_range[drawer_id, 1]
             )
             target = np.clip(
-                _joint_qpos(self.model, self.data, base)
+                self.drawer_close_cnc_start
+                - DRAWER_CLOSE_APPROACH_DISTANCE_M
                 + delta
                 - DRAWER_PUSH_MARGIN_M,
                 *self.model.jnt_range[base_id],
@@ -1407,39 +1477,23 @@ class MujocoIKController:
             )
         elif self.phase == "release_closed_drawer":
             assert self.drawer_hand is not None
-            # TEMPORARILY DISABLED FOR DEBUGGING:
-            # opening = self._drawer_opening()
-            # if opening > MAX_DRAWER_CLOSED_OPENING_M:
-            #     self._fail(
-            #         "drawer closing",
-            #         f"drawer remains open by {opening:.4f} m; permitted at most "
-            #         f"{MAX_DRAWER_CLOSED_OPENING_M:.4f} m",
-            #     )
-            #     return
-            target = min(
-                _joint_qpos(self.model, self.data, base) + 0.04,
-                self.model.jnt_range[base_id, 1],
-            )
+            opening = self._drawer_opening()
+            if opening > MAX_DRAWER_CLOSED_OPENING_M:
+                self._fail(
+                    "drawer closing",
+                    f"drawer remains open by {opening:.4f} m; permitted at most "
+                    f"{MAX_DRAWER_CLOSED_OPENING_M:.4f} m",
+                )
+                return
+            if self.drawer_close_cnc_start is None:
+                raise RuntimeError("Drawer closing CNC-X start position was not saved")
             self._start_motion(
-                {base: float(target)},
+                {base: self.drawer_close_cnc_start},
                 after="final_return",
                 duration_scale=0.6,
                 fingers={self.drawer_hand: FINGER_CLOSED},
             )
         elif self.phase == "final_return":
-            # TEMPORARILY DISABLED FOR DEBUGGING:
-            # opening = self._drawer_opening()
-            # inside = _cube_fully_inside_drawer(
-            #     self.model, self.data, self.drawer_index
-            # )
-            # if opening > MAX_DRAWER_CLOSED_OPENING_M or not inside:
-            #     self._fail(
-            #         "drawer release",
-            #         f"post-release drawer opening={opening:.4f} m, "
-            #         f"cube_inside={inside}; required opening <= "
-            #         f"{MAX_DRAWER_CLOSED_OPENING_M:.4f} m and cube_inside=True",
-            #     )
-            #     return
             self._start_motion(
                 self.initial_targets,
                 after="finished",
@@ -1447,7 +1501,7 @@ class MujocoIKController:
             )
         elif self.phase == "finished":
             opening = self._drawer_opening()
-            inside = _cube_fully_inside_drawer(self.model, self.data, self.drawer_index)
+            inside = _cube_center_inside_drawer(self.model, self.data, self.drawer_index)
             self.successful = opening <= MAX_DRAWER_CLOSED_OPENING_M and inside
             self.status = (
                 f"cube inside closed drawer {self.drawer_index}"

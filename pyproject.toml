@@ -51,6 +51,10 @@ packages = [
 [tool.pytest.ini_options]
 addopts = "-ra -p no:capture"
 testpaths = ["tests"]
+markers = [
+    "integration: headless end-to-end simulation tests",
+    "slow: tests that run complete simulated episodes",
+]
 
 [tool.ruff]
 extend-exclude = ["doc", "hardware"]

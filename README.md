@@ -438,6 +438,16 @@ System 1 and system 2 from Daniel Kahneman. See Gemini Robotics paper from Googl
   or Pi0.5 from Physicall Intelligence or Gr00t model from Nvidia.
 Real word manipulation and embodiment data would be great new data for LLMs.
 
+Now the robot reaches a state that was never present in the training dataset.
+
+The policy doesn't know what to do there.
+
+It makes another mistake → gets even further away → makes another mistake.
+
+This is called distribution shift or compounding errors.
+
+Only RL can beat the expert, because it optmizes for it.
+
 ### Robot Description (Upper Body)
 
 The robot's upper body has 15 Degrees of Freedom (DoF): three linear axes
