@@ -66,11 +66,12 @@ CUBE_PLACE_HANDLE_Z_OFFSET_M = 0.07
 TOP_ROW_CUBE_PLACE_CLEARANCE_M = 0.04
 
 # Conservative episode-level trajectory augmentation. These are amplitudes, so
-# a value such as 0.003 means a uniform sample in [-3 mm, 3 mm]. Safety checks,
-# collision margins, and joint limits are intentionally not randomized.
+# a value such as 0.003 means a uniform sample in [-3 mm, 3 mm]. The cube-grasp
+# height is the one-sided exception. Safety checks, collision margins, and joint
+# limits are intentionally not randomized.
 CUBE_GRASP_DEPTH_NOISE_M = 0.001
 CUBE_GRASP_LATERAL_NOISE_M = 0.003
-CUBE_GRASP_HEIGHT_NOISE_M = 0.008
+CUBE_GRASP_HEIGHT_NOISE_M = 0.010
 CUBE_GRASP_ORIENTATION_NOISE_DEG = 3.0
 DRAWER_HANDLE_LATERAL_NOISE_M = 0.008
 DRAWER_APPROACH_NOISE_M = 0.004
@@ -93,6 +94,17 @@ DRAWER_PUSH_MARGIN_NOISE_M = 0.004
 CUBE_GRASP_POSITION_NOISE = 0.01
 DRAWER_GRASP_POSITION_NOISE = 0.005
 MOTION_DURATION_NOISE_FRACTION = 0.15
+PERTURBATION_PHASES = (
+    "drawer_ik",
+    "cube_ik",
+    "cube_above_drawer",
+    "close_drawer_ik",
+)
+PERTURBATION_TRIGGER_RANGE = (0.30, 0.70)
+PERTURBATION_DURATION_S = 0.60
+PERTURBATION_RECOVERY_DURATION_S = 1.20
+PERTURBATION_GANTRY_RANGE = (0.010, 0.020)
+PERTURBATION_ARM_RANGE = (0.040, 0.080)
 
 IK_TARGET_MARKERS = (
     "hand_tip_marker",
@@ -217,7 +229,9 @@ class TrajectoryRandomization:
                 dtype=float,
             ),
             cube_grasp_rotation=_rotation_from_rpy_degrees(cube_angles),
-            cube_grasp_height_delta=float(symmetric(CUBE_GRASP_HEIGHT_NOISE_M)),
+            cube_grasp_height_delta=float(
+                rng.uniform(0.0, CUBE_GRASP_HEIGHT_NOISE_M * scale)
+            ),
             drawer_handle_lateral_offset=float(
                 symmetric(DRAWER_HANDLE_LATERAL_NOISE_M)
             ),
@@ -827,6 +841,33 @@ def _cube_center_inside_drawer(
     return inside_xy and inside_height
 
 
+def _cube_center_inside_storage_bin(
+    model: mujoco.MjModel, data: mujoco.MjData
+) -> bool:
+    floor_id = _named_id(
+        model,
+        mujoco.mjtObj.mjOBJ_GEOM,
+        "storage_bin_link_collision_box_05_geom",
+    )
+    cube_id = _named_id(
+        model, mujoco.mjtObj.mjOBJ_GEOM, "cube_link_collision_box_01_geom"
+    )
+    floor_rotation = data.geom_xmat[floor_id].reshape(3, 3)
+    local_center = floor_rotation.T @ (
+        data.geom_xpos[cube_id] - data.geom_xpos[floor_id]
+    )
+    cube_radius = model.geom_size[cube_id, :2]
+    inside_xy = bool(
+        np.all(
+            np.abs(local_center[:2])
+            <= model.geom_size[floor_id, :2] - cube_radius
+        )
+    )
+    floor_top = float(model.geom_size[floor_id, 2])
+    inside_height = floor_top - 0.005 <= local_center[2] <= floor_top + 0.060
+    return inside_xy and inside_height
+
+
 @dataclass
 class _Motion:
     start: np.ndarray
@@ -898,6 +939,13 @@ class MujocoIKController:
         self.drawer_close_cnc_start: float | None = None
         self.handoff_target: np.ndarray | None = None
         self.handoff_donor: Side | None = None
+        self.perturbation_phase = PERTURBATION_PHASES[0]
+        self.perturbation_trigger = PERTURBATION_TRIGGER_RANGE[0]
+        self.perturbation_applied = False
+        self.perturbation_expected_cube_held = False
+        self.perturbation_resume_target: np.ndarray | None = None
+        self.perturbation_resume_after: str | None = None
+        self._recording_action = self._current_action()
         self.episode_seed = seed
         self.done = False
         self.successful = False
@@ -945,6 +993,16 @@ class MujocoIKController:
         self._motion_rng = np.random.default_rng(
             np.random.SeedSequence([self.seed, episode_seed, 0x4D4F544E])
         )
+        perturbation_rng = np.random.default_rng(
+            np.random.SeedSequence([self.seed, episode_seed, 0x50455254])
+        )
+        self.perturbation_phase = PERTURBATION_PHASES[
+            int(perturbation_rng.integers(0, len(PERTURBATION_PHASES)))
+        ]
+        self.perturbation_trigger = float(
+            perturbation_rng.uniform(*PERTURBATION_TRIGGER_RANGE)
+        )
+        self._perturbation_rng = perturbation_rng
         self._initialize_ik_targets()
         self.episode_seed = episode_seed
         self.phase = "initialize_cnc"
@@ -953,6 +1011,11 @@ class MujocoIKController:
         self.drawer_close_cnc_start = None
         self.handoff_target = None
         self.handoff_donor = None
+        self.perturbation_applied = False
+        self.perturbation_expected_cube_held = False
+        self.perturbation_resume_target = None
+        self.perturbation_resume_after = None
+        self._recording_action = self._current_action()
         self.done = False
         self.successful = False
         handoff = self.cube_hand != self.placement_hand
@@ -964,7 +1027,8 @@ class MujocoIKController:
             f"cube=({cube_position[0]:.4f}, {cube_position[1]:.4f}, "
             f"{cube_position[2]:.4f}), drawer={self.drawer_index}, "
             f"drawer hand={self.drawer_hand}; "
-            f"cube hand={self.cube_hand}, handoff={handoff}"
+            f"cube hand={self.cube_hand}, handoff={handoff}; "
+            f"perturbation={self.perturbation_phase}@{self.perturbation_trigger:.2f}"
         )
 
     def _set_ik_target(
@@ -1161,6 +1225,84 @@ class MujocoIKController:
     def _current_action(self) -> np.ndarray:
         return self.data.ctrl[self.backend.actuator_ids].astype(float, copy=True)
 
+    @property
+    def recording_action(self) -> dict[str, float]:
+        """Expert label for the current observation, excluding injected disturbance."""
+
+        return self.backend.action_dict(self._recording_action)
+
+    def _start_raw_motion(
+        self,
+        target: np.ndarray,
+        *,
+        after: str,
+        duration_s: float,
+    ) -> None:
+        start = self._current_action()
+        clipped_target = np.clip(
+            np.asarray(target, dtype=float),
+            self.backend.control_low,
+            self.backend.control_high,
+        )
+        frames = max(2, round(duration_s * self.backend.config.fps))
+        self.motion = _Motion(start, clipped_target, frames, after)
+
+    def _perturbed_target(self) -> np.ndarray:
+        current = self._current_action()
+        target = current.copy()
+        for actuator_index in range(len(ACTUATOR_NAMES)):
+            if ACTUATOR_NAMES[actuator_index].startswith("finger_"):
+                continue
+            if actuator_index < len(COMMON_JOINTS):
+                low, high = PERTURBATION_GANTRY_RANGE
+            else:
+                low, high = PERTURBATION_ARM_RANGE
+            magnitude = float(self._perturbation_rng.uniform(low, high))
+            direction = -1.0 if self._perturbation_rng.random() < 0.5 else 1.0
+            candidate = np.clip(
+                current[actuator_index] + direction * magnitude,
+                self.backend.control_low[actuator_index],
+                self.backend.control_high[actuator_index],
+            )
+            if abs(candidate - current[actuator_index]) < 0.5 * magnitude:
+                candidate = np.clip(
+                    current[actuator_index] - direction * magnitude,
+                    self.backend.control_low[actuator_index],
+                    self.backend.control_high[actuator_index],
+                )
+            target[actuator_index] = candidate
+        return target
+
+    def _should_start_perturbation(self) -> bool:
+        if (
+            self.perturbation_applied
+            or self.motion is None
+            or self.phase != self.perturbation_phase
+        ):
+            return False
+        denominator = max(1, self.motion.frame_count - 1)
+        return self.motion.frame_index / denominator >= self.perturbation_trigger
+
+    def _begin_perturbation(self) -> None:
+        if self.motion is None:
+            raise RuntimeError("Cannot perturb without an active expert motion")
+        self.perturbation_applied = True
+        self.perturbation_expected_cube_held = self.phase == "cube_above_drawer"
+        self.perturbation_resume_target = self.motion.target.copy()
+        self.perturbation_resume_after = self.motion.after
+        self.phase = "apply_perturbation"
+        self._start_raw_motion(
+            self._perturbed_target(),
+            after="recover_perturbation",
+            duration_s=PERTURBATION_DURATION_S,
+        )
+
+    def _cube_is_still_held(self) -> bool:
+        if self.cube_hand is None:
+            return False
+        near_hand, _ = _cube_near_hand(self.model, self.data, self.cube_hand)
+        return near_hand
+
     def _actuator_index_for_joint(self, joint_name: str) -> int:
         joint_id = _joint_id(self.model, joint_name)
         matches = np.flatnonzero(
@@ -1269,7 +1411,46 @@ class MujocoIKController:
         lateral_id = _joint_id(self.model, lateral)
         vertical_id = _joint_id(self.model, vertical)
 
-        if self.phase == "initialize_cnc":
+        if self.phase == "recover_perturbation":
+            if self.perturbation_resume_target is None:
+                raise RuntimeError("Perturbation recovery target was not saved")
+            self._start_raw_motion(
+                self.perturbation_resume_target,
+                after="assess_perturbation_recovery",
+                duration_s=PERTURBATION_RECOVERY_DURATION_S,
+            )
+        elif self.phase == "assess_perturbation_recovery":
+            if self.perturbation_resume_after is None:
+                raise RuntimeError("Perturbation continuation phase was not saved")
+            if (
+                self.perturbation_expected_cube_held
+                and not self._cube_is_still_held()
+            ):
+                mujoco.mj_forward(self.model, self.data)
+                if _cube_center_inside_storage_bin(self.model, self.data):
+                    self._start_motion(
+                        self._initial_view_targets(),
+                        after="restart_after_perturbation_drop",
+                        fingers={"l": FINGER_OPEN, "r": FINGER_OPEN},
+                    )
+                else:
+                    self._start_motion(
+                        self._initial_view_targets(),
+                        after="abort_after_perturbation_drop",
+                        fingers={"l": FINGER_OPEN, "r": FINGER_OPEN},
+                    )
+            else:
+                self.phase = self.perturbation_resume_after
+        elif self.phase == "restart_after_perturbation_drop":
+            self.cube_initial_z = float(_cube_position(self.model, self.data)[2])
+            self.phase = "cube_ik"
+        elif self.phase == "abort_after_perturbation_drop":
+            self.successful = False
+            self.done = True
+            self.status = (
+                "episode aborted after perturbation: cube fell outside storage bin"
+            )
+        elif self.phase == "initialize_cnc":
             self._start_motion(
                 self._initial_view_targets(),
                 after="open_before_first_ik",
@@ -1825,4 +2006,16 @@ class MujocoIKController:
             self.motion = None
         while self.motion is None and not self.done:
             self._dispatch_phase()
-        return self._current_action() if self.done else self.motion.next_action()
+        if not self.done and self._should_start_perturbation():
+            self._begin_perturbation()
+        executed_action = (
+            self._current_action() if self.done else self.motion.next_action()
+        )
+        if (
+            self.phase == "apply_perturbation"
+            and self.perturbation_resume_target is not None
+        ):
+            self._recording_action = self.perturbation_resume_target.copy()
+        else:
+            self._recording_action = executed_action.copy()
+        return executed_action

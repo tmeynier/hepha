@@ -131,10 +131,11 @@ def record_dataset(args: argparse.Namespace) -> Path:
                     progress = frame_index / (frames_per_attempt - 1)
                     observation = backend.get_observation(advance=False)
                     action = backend.send_action(controller.action(progress))
+                    expert_action = getattr(controller, "recording_action", action)
                     add_robot_frame(
                         dataset,
                         observation=observation,
-                        action=action,
+                        action=expert_action,
                         task=args.task,
                     )
                     backend.step()

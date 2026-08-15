@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import colorsys
-import io
 import time
 from dataclasses import dataclass
 from importlib.resources import as_file, files
@@ -12,7 +11,6 @@ from typing import Any
 
 import mujoco
 import numpy as np
-from PIL import Image
 
 from simulation.base import FeatureSpec, SimulationBackend, SimulationConfig
 
@@ -65,7 +63,6 @@ class _ImageRandomization:
     gamma: float = 1.0
     blur_blend: float = 0.0
     noise_std: float = 0.0
-    jpeg_quality: int = 100
 
 
 def _yaw_quaternion(angle: float) -> np.ndarray:
@@ -170,6 +167,7 @@ class MujocoBackend(SimulationBackend):
         self._viewer: Any | None = None
         self._image_randomization = _ImageRandomization()
         self._image_rng = np.random.default_rng(0)
+        self._appearance_rng = np.random.default_rng(0)
 
         self.actuator_ids = self._resolve_actuator_ids()
         self.joint_ids = self.model.actuator_trnid[self.actuator_ids, 0].astype(int)
@@ -288,6 +286,8 @@ class MujocoBackend(SimulationBackend):
     def render(self) -> np.ndarray:
         if self._renderer is None:
             raise RuntimeError("Rendering was disabled for this simulation")
+        self._randomize_colors(self._appearance_rng, self.domain_randomization_scale)
+        self._randomize_lights(self._appearance_rng, self.domain_randomization_scale)
         self._renderer.update_scene(
             self.data,
             camera=self.config.camera,
@@ -480,6 +480,35 @@ class MujocoBackend(SimulationBackend):
             )
             self.model.geom_rgba[candidate, 3] = 1.0
 
+    def _randomize_lights(self, rng: np.random.Generator, scale: float) -> None:
+        if scale <= 0.0:
+            return
+
+        for light_id in range(self.model.nlight):
+            self.model.light_pos[light_id] = (
+                self._nominal_light_pos[light_id]
+                + rng.uniform((-0.45, -0.45, -0.25), (0.45, 0.45, 0.25)) * scale
+            )
+            direction = self._nominal_light_dir[light_id] + rng.uniform(
+                -0.20 * scale, 0.20 * scale, size=3
+            )
+            direction_norm = float(np.linalg.norm(direction))
+            if direction_norm > 1e-9:
+                self.model.light_dir[light_id] = direction / direction_norm
+            color = _kelvin_rgb(rng.uniform(3500.0, 7500.0))
+            intensity = rng.uniform(0.65, 1.25)
+            ambient = rng.uniform(0.08, 0.28)
+            specular = rng.uniform(0.10, 0.40)
+            self.model.light_diffuse[light_id] = np.clip(
+                color * intensity, 0.0, 1.0
+            )
+            self.model.light_ambient[light_id] = np.clip(
+                color * ambient, 0.0, 1.0
+            )
+            self.model.light_specular[light_id] = np.clip(
+                color * specular, 0.0, 1.0
+            )
+
     def _apply_domain_randomization(self, seed: int) -> None:
         scale = self.domain_randomization_scale
         rng = np.random.default_rng(
@@ -488,9 +517,11 @@ class MujocoBackend(SimulationBackend):
         self._image_rng = np.random.default_rng(
             np.random.SeedSequence([seed, 0x494D4147])
         )
+        self._appearance_rng = np.random.default_rng(
+            np.random.SeedSequence([seed, 0x4652414D])
+        )
         if scale == 0.0:
             return
-        self._randomize_colors(rng, scale)
 
         background = _random_color(
             rng, saturation=(0.02, 0.30), value=(0.18, 0.75)
@@ -583,31 +614,6 @@ class MujocoBackend(SimulationBackend):
                 120.0,
             )
 
-        for light_id in range(self.model.nlight):
-            self.model.light_pos[light_id] = (
-                self._nominal_light_pos[light_id]
-                + rng.uniform((-0.45, -0.45, -0.25), (0.45, 0.45, 0.25)) * scale
-            )
-            direction = self._nominal_light_dir[light_id] + rng.uniform(
-                -0.20 * scale, 0.20 * scale, size=3
-            )
-            direction_norm = float(np.linalg.norm(direction))
-            if direction_norm > 1e-9:
-                self.model.light_dir[light_id] = direction / direction_norm
-            color = _kelvin_rgb(rng.uniform(3500.0, 7500.0))
-            intensity = rng.uniform(0.65, 1.25)
-            ambient = rng.uniform(0.08, 0.28)
-            specular = rng.uniform(0.10, 0.40)
-            self.model.light_diffuse[light_id] = np.clip(
-                color * intensity, 0.0, 1.0
-            )
-            self.model.light_ambient[light_id] = np.clip(
-                color * ambient, 0.0, 1.0
-            )
-            self.model.light_specular[light_id] = np.clip(
-                color * specular, 0.0, 1.0
-            )
-
         self._image_randomization = _ImageRandomization(
             brightness=float(rng.uniform(-0.08, 0.08) * scale),
             contrast=float(1.0 + rng.uniform(-0.15, 0.15) * scale),
@@ -615,9 +621,6 @@ class MujocoBackend(SimulationBackend):
             gamma=float(1.0 + rng.uniform(-0.12, 0.12) * scale),
             blur_blend=float(np.clip(rng.uniform(0.0, 0.35) * scale, 0.0, 1.0)),
             noise_std=float(rng.uniform(0.0, 0.012) * scale),
-            jpeg_quality=int(
-                np.clip(round(100.0 - rng.uniform(0.0, 15.0) * scale), 70, 100)
-            ),
         )
 
     def _postprocess_image(self, image: np.ndarray) -> np.ndarray:
@@ -658,23 +661,10 @@ class MujocoBackend(SimulationBackend):
             pixels += self._image_rng.normal(
                 0.0, randomization.noise_std, size=pixels.shape
             ).astype(np.float32)
-        processed = np.asarray(
+        return np.asarray(
             np.clip(np.rint(np.clip(pixels, 0.0, 1.0) * 255.0), 0.0, 255.0),
             dtype=np.uint8,
         )
-        if randomization.jpeg_quality < 100:
-            buffer = io.BytesIO()
-            Image.fromarray(processed, mode="RGB").save(
-                buffer,
-                format="JPEG",
-                quality=randomization.jpeg_quality,
-                subsampling=1,
-                optimize=False,
-            )
-            buffer.seek(0)
-            with Image.open(buffer) as decoded:
-                processed = np.asarray(decoded.convert("RGB"), dtype=np.uint8).copy()
-        return processed
 
     def _configure_viewer_groups(self, *, debug: bool) -> None:
         if self._viewer is None:
