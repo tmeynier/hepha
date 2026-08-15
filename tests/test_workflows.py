@@ -41,7 +41,7 @@ def test_train_command_forwards_any_registered_policy_to_lerobot() -> None:
     assert "--policy.n_action_steps=8" in command
 
 
-def test_evaluate_command_uses_plugin_and_rollout(monkeypatch) -> None:
+def test_evaluate_command_uses_conditioned_rollout(monkeypatch) -> None:
     monkeypatch.setattr("hepha_lerobot.evaluation.rollout.sys.platform", "linux")
     args = Namespace(
         policy_path=Path("outputs/test/checkpoint"),
@@ -53,18 +53,21 @@ def test_evaluate_command_uses_plugin_and_rollout(monkeypatch) -> None:
         height=256,
         camera="head_camera",
         task="move",
+        drawer_index=4,
+        seed=7,
         device="cpu",
         headless=True,
+        debug=False,
         display_data=False,
-        lerobot_args=[],
     )
     command = build_rollout_command(args)
 
-    assert "--strategy.type=base" in command
-    assert "--robot.type=hepha_simulation" in command
-    assert "--robot.backend=mujoco" in command
-    assert '--robot.backend_options={"model_path": "custom.xml"}' in command
-    assert "--robot.viewer=false" in command
+    assert "hepha_lerobot.evaluation.conditioned_rollout" in command
+    assert "--backend=mujoco" in command
+    assert "--backend-option=model_path=custom.xml" in command
+    assert "--drawer-index=4" in command
+    assert "--task=move" in command
+    assert "--viewer=false" in command
 
 
 def test_rollout_options_after_policy_path_are_not_forwarded(monkeypatch) -> None:
@@ -78,7 +81,8 @@ def test_rollout_options_after_policy_path_are_not_forwarded(monkeypatch) -> Non
             "--duration",
             "2",
             "--headless",
-            "--inference.type=sync",
+            "--drawer-index",
+            "7",
         ],
     )
     args = parse_rollout_args()
@@ -86,7 +90,7 @@ def test_rollout_options_after_policy_path_are_not_forwarded(monkeypatch) -> Non
     assert args.backend == "mujoco"
     assert args.duration == 2
     assert args.headless
-    assert args.lerobot_args == ["--inference.type=sync"]
+    assert args.drawer_index == 7
 
 
 def test_training_forwards_only_unknown_lerobot_options(monkeypatch) -> None:

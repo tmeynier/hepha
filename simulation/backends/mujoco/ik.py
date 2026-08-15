@@ -814,6 +814,19 @@ def _cube_position(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
     return data.geom_xpos[cube_id].copy()
 
 
+def _cube_spawn_quadrant(model: mujoco.MjModel, data: mujoco.MjData) -> str:
+    storage_center_id = _named_id(
+        model, mujoco.mjtObj.mjOBJ_BODY, "storage_bin_center_marker"
+    )
+    storage_rotation = data.xmat[storage_center_id].reshape(3, 3)
+    offset = storage_rotation.T @ (
+        _cube_position(model, data) - data.xpos[storage_center_id]
+    )
+    vertical = "upper" if offset[1] >= 0.0 else "bottom"
+    horizontal = "left" if offset[0] < 0.0 else "right"
+    return f"{vertical}_{horizontal}"
+
+
 def _cube_near_hand(
     model: mujoco.MjModel, data: mujoco.MjData, side: Side
 ) -> tuple[bool, float]:
@@ -946,6 +959,8 @@ class MujocoIKController:
         self.perturbation_resume_target: np.ndarray | None = None
         self.perturbation_resume_after: str | None = None
         self._recording_action = self._current_action()
+        self.cube_spawn_position = _cube_position(self.model, self.data)
+        self.cube_quadrant = _cube_spawn_quadrant(self.model, self.data)
         self.episode_seed = seed
         self.done = False
         self.successful = False
@@ -983,7 +998,9 @@ class MujocoIKController:
         self.initial_targets = {
             name: _joint_qpos(self.model, self.data, name) for name in ROBOT_JOINTS
         }
-        self.cube_initial_z = float(_cube_position(self.model, self.data)[2])
+        self.cube_spawn_position = _cube_position(self.model, self.data)
+        self.cube_quadrant = _cube_spawn_quadrant(self.model, self.data)
+        self.cube_initial_z = float(self.cube_spawn_position[2])
         self.drawer_index = int(rng.integers(1, 10))
         self.trajectory = TrajectoryRandomization.sample(
             seed=self.seed,
@@ -1230,6 +1247,16 @@ class MujocoIKController:
         """Expert label for the current observation, excluding injected disturbance."""
 
         return self.backend.action_dict(self._recording_action)
+
+    @property
+    def recording_metadata(self) -> dict[str, object]:
+        """Episode-level fields used for recording coverage and success reports."""
+
+        return {
+            "drawer_index": self.drawer_index,
+            "cube_position": self.cube_spawn_position.tolist(),
+            "cube_quadrant": self.cube_quadrant,
+        }
 
     def _start_raw_motion(
         self,

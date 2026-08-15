@@ -298,6 +298,27 @@ class MujocoBackend(SimulationBackend):
             return image
         return self._postprocess_image(image)
 
+    def capture_deferred_observation(self) -> tuple[dict[str, Any], np.ndarray]:
+        """Capture compact state for rendering after an attempt is accepted."""
+
+        positions = self.joint_positions()
+        observation = {
+            f"{name}.pos": float(value)
+            for name, value in zip(ACTUATOR_NAMES, positions, strict=True)
+        }
+        return observation, self.data.qpos.copy()
+
+    def materialize_deferred_observation(
+        self,
+        observation: dict[str, Any],
+        render_state: np.ndarray,
+    ) -> dict[str, Any]:
+        """Render one previously captured state without advancing its physics."""
+
+        self.data.qpos[:] = render_state
+        mujoco.mj_forward(self.model, self.data)
+        return {**observation, self.config.camera: self.render()}
+
     def get_observation(self, *, advance: bool = True) -> dict[str, Any]:
         if advance:
             self.step()
