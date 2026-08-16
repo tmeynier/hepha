@@ -9,6 +9,9 @@ from hepha_lerobot.policies.hepha_act_phase import (
 from hepha_lerobot.policies.hepha_act_phase.evaluation_metrics import (
     consume_phase_eval_metrics,
 )
+from hepha_lerobot.policies.hepha_act_phase.processor_hepha_act_phase import (
+    make_hepha_act_phase_pre_post_processors,
+)
 from lerobot.configs import FeatureType, PolicyFeature
 from lerobot.utils.constants import ACTION, OBS_ENV_STATE, OBS_STATE
 
@@ -97,3 +100,13 @@ def test_phase_act_accumulates_held_out_phase_metrics() -> None:
         "phase_hold_accuracy",
     }
     assert consume_phase_eval_metrics() == {}
+
+
+def test_phase_act_preprocessor_preserves_next_phase_target() -> None:
+    policy = _small_policy()
+    preprocessor, _ = make_hepha_act_phase_pre_post_processors(policy.config)
+
+    processed_batch = preprocessor(_batch())
+
+    assert NEXT_TASK_PHASE in processed_batch
+    assert torch.equal(processed_batch[NEXT_TASK_PHASE], _batch()[NEXT_TASK_PHASE])
