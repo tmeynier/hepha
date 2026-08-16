@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +28,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--drawer-index", type=int, default=5)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="auto")
+    parser.add_argument(
+        "--n-action-steps",
+        type=int,
+        default=None,
+        help=(
+            "Override how many predicted actions are executed before replanning; "
+            "use 1 for closed-loop replanning every frame"
+        ),
+    )
+    parser.add_argument(
+        "--temporal-ensemble-coeff",
+        type=float,
+        default=None,
+        help=(
+            "Enable ACT temporal ensembling at inference (original ACT uses 0.01); "
+            "requires --n-action-steps 1"
+        ),
+    )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument(
         "--debug", nargs="?", const=True, default=False, type=_parse_bool
@@ -77,6 +96,12 @@ def build_rollout_command(args: argparse.Namespace) -> list[str]:
     )
     for backend_option in args.backend_option:
         command.append(f"--backend-option={backend_option}")
+    n_action_steps = getattr(args, "n_action_steps", None)
+    temporal_ensemble_coeff = getattr(args, "temporal_ensemble_coeff", None)
+    if n_action_steps is not None:
+        command.append(f"--n-action-steps={n_action_steps}")
+    if temporal_ensemble_coeff is not None:
+        command.append(f"--temporal-ensemble-coeff={temporal_ensemble_coeff}")
     return command
 
 
@@ -84,6 +109,17 @@ def main() -> None:
     args = parse_args()
     if args.duration <= 0 or args.fps <= 0:
         raise ValueError("--duration and --fps must be positive")
+    if args.n_action_steps is not None and args.n_action_steps <= 0:
+        raise ValueError("--n-action-steps must be positive")
+    if args.temporal_ensemble_coeff is not None:
+        if not math.isfinite(args.temporal_ensemble_coeff):
+            raise ValueError("--temporal-ensemble-coeff must be finite")
+        if args.temporal_ensemble_coeff < 0.0:
+            raise ValueError("--temporal-ensemble-coeff must be non-negative")
+        if args.n_action_steps != 1:
+            raise ValueError(
+                "Temporal ensembling requires --n-action-steps 1"
+            )
     validate_drawer_index(args.drawer_index)
     if not args.policy_path.exists() and not args.dry_run:
         raise FileNotFoundError(f"Policy checkpoint not found: {args.policy_path}")

@@ -13,7 +13,15 @@ import mujoco
 import numpy as np
 from scipy.optimize import differential_evolution, minimize
 
+from . import episode as episode_utils
 from .backend import ACTUATOR_NAMES, MujocoBackend
+
+CUBE_SPAWN_RADIUS_M = episode_utils.CUBE_SPAWN_RADIUS_M
+IK_TARGET_MARKERS = episode_utils.IK_TARGET_MARKERS
+_cube_position = episode_utils.cube_position
+_cube_spawn_quadrant = episode_utils.cube_spawn_quadrant
+_randomize_cube = episode_utils.randomize_cube
+initialize_task_episode = episode_utils.initialize_task_episode
 
 Side = Literal["l", "r"]
 
@@ -55,7 +63,6 @@ MIN_DRAWER_OPENING_M = 0.020
 MAX_DRAWER_CLOSED_OPENING_M = 0.010
 CUBE_LIFT_CHECK_M = 0.020
 CUBE_HAND_DISTANCE_M = 0.050
-CUBE_SPAWN_RADIUS_M = 0.10
 CUBE_GRASP_APPROACH_HEIGHT_M = 0.13
 DRAWER_APPROACH_DISTANCE_M = 0.07
 DRAWER_CLOSE_APPROACH_DISTANCE_M = 0.05
@@ -105,14 +112,14 @@ PERTURBATION_DURATION_S = 0.60
 PERTURBATION_RECOVERY_DURATION_S = 1.20
 PERTURBATION_GANTRY_RANGE = (0.010, 0.020)
 PERTURBATION_ARM_RANGE = (0.040, 0.080)
-
-IK_TARGET_MARKERS = (
-    "hand_tip_marker",
-    "drawer_target_marker",
-    "above_drawer_target_marker",
-    "drawer_close_target_marker",
-)
-
+TASK_PHASE_COUNT = 5
+TASK_PHASE_TRANSITION_WINDOW_FRAMES = 5
+TASK_PHASE_TRANSITION_AFTER = {
+    1: "cube_ik",
+    2: "return_without_base",
+    3: "cube_above_drawer",
+    4: "cube_hand_rest",
+}
 
 def _named_id(model: mujoco.MjModel, kind: mujoco.mjtObj, name: str) -> int:
     object_id = mujoco.mj_name2id(model, kind, name)
@@ -789,44 +796,6 @@ def _set_finger_state(
     data.qpos[model.jnt_qposadr[joint_id]] = np.clip(value, *model.jnt_range[joint_id])
 
 
-def _randomize_cube(
-    model: mujoco.MjModel, data: mujoco.MjData, rng: np.random.Generator
-) -> None:
-    joint_id = _joint_id(model, "cube_link_free_joint")
-    qpos_id = int(model.jnt_qposadr[joint_id])
-    storage_center_id = _named_id(
-        model, mujoco.mjtObj.mjOBJ_BODY, "storage_bin_center_marker"
-    )
-    data.qpos[qpos_id : qpos_id + 3] = data.xpos[storage_center_id]
-    radius = CUBE_SPAWN_RADIUS_M * np.sqrt(rng.uniform())
-    angle = rng.uniform(-np.pi, np.pi)
-    data.qpos[qpos_id] += radius * np.cos(angle)
-    data.qpos[qpos_id + 1] += radius * np.sin(angle)
-    yaw = rng.uniform(-np.pi, np.pi)
-    data.qpos[qpos_id + 3 : qpos_id + 7] = (np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2))
-    data.qvel[model.jnt_dofadr[joint_id] : model.jnt_dofadr[joint_id] + 6] = 0.0
-
-
-def _cube_position(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
-    cube_id = _named_id(
-        model, mujoco.mjtObj.mjOBJ_GEOM, "cube_link_collision_box_01_geom"
-    )
-    return data.geom_xpos[cube_id].copy()
-
-
-def _cube_spawn_quadrant(model: mujoco.MjModel, data: mujoco.MjData) -> str:
-    storage_center_id = _named_id(
-        model, mujoco.mjtObj.mjOBJ_BODY, "storage_bin_center_marker"
-    )
-    storage_rotation = data.xmat[storage_center_id].reshape(3, 3)
-    offset = storage_rotation.T @ (
-        _cube_position(model, data) - data.xpos[storage_center_id]
-    )
-    vertical = "upper" if offset[1] >= 0.0 else "bottom"
-    horizontal = "left" if offset[0] < 0.0 else "right"
-    return f"{vertical}_{horizontal}"
-
-
 def _cube_near_hand(
     model: mujoco.MjModel, data: mujoco.MjData, side: Side
 ) -> tuple[bool, float]:
@@ -959,6 +928,9 @@ class MujocoIKController:
         self.perturbation_resume_target: np.ndarray | None = None
         self.perturbation_resume_after: str | None = None
         self._recording_action = self._current_action()
+        self.task_phase = 1
+        self._recording_task_phase = 1
+        self._recording_next_task_phase = 1
         self.cube_spawn_position = _cube_position(self.model, self.data)
         self.cube_quadrant = _cube_spawn_quadrant(self.model, self.data)
         self.episode_seed = seed
@@ -967,34 +939,10 @@ class MujocoIKController:
         self.status = "not started"
 
     def reset(self, *, episode_seed: int) -> None:
-        self.backend.reset(seed=self.seed + episode_seed)
-        # The original physical task was designed and tuned from the MJCF pose,
-        # whereas the general-purpose viewer uses actuator-range midpoints.
-        mujoco.mj_resetData(self.model, self.data)
-        base_id = _joint_id(self.model, "base_link_base_cnc_x_joint")
-        base_qpos_id = int(self.model.jnt_qposadr[base_id])
-        self.data.qpos[base_qpos_id] = np.mean(self.model.jnt_range[base_id])
-        rng = np.random.default_rng(self.seed + episode_seed)
-        mujoco.mj_forward(self.model, self.data)
-        _randomize_cube(self.model, self.data, rng)
-        for actuator_id in self.backend.actuator_ids:
-            joint_id = int(self.model.actuator_trnid[actuator_id, 0])
-            qpos_id = int(self.model.jnt_qposadr[joint_id])
-            self.data.ctrl[actuator_id] = np.clip(
-                self.data.qpos[qpos_id], *self.model.actuator_ctrlrange[actuator_id]
-            )
-        for side in ("l", "r"):
-            _set_finger_state(self.model, self.data, side, FINGER_CLOSED)
-            action_index = ACTUATOR_NAMES.index(f"finger_{side}")
-            self.data.ctrl[self.backend.actuator_ids[action_index]] = FINGER_CLOSED
-        self._hide_ik_targets()
-        mujoco.mj_forward(self.model, self.data)
-        mujoco.mj_step(
-            self.model,
-            self.data,
-            nstep=max(1, round(0.5 / self.model.opt.timestep)),
+        rng = initialize_task_episode(
+            self.backend,
+            seed=self.seed + episode_seed,
         )
-        self.data.time = 0.0
         self.initial_targets = {
             name: _joint_qpos(self.model, self.data, name) for name in ROBOT_JOINTS
         }
@@ -1033,6 +981,9 @@ class MujocoIKController:
         self.perturbation_resume_target = None
         self.perturbation_resume_after = None
         self._recording_action = self._current_action()
+        self.task_phase = 1
+        self._recording_task_phase = 1
+        self._recording_next_task_phase = 1
         self.done = False
         self.successful = False
         handoff = self.cube_hand != self.placement_hand
@@ -1099,12 +1050,6 @@ class MujocoIKController:
             )
             mujoco.mj_forward(self.model, self.data)
             self.backend.sync_viewer()
-
-    def _hide_ik_targets(self) -> None:
-        for marker_body in IK_TARGET_MARKERS:
-            body_id = _named_id(self.model, mujoco.mjtObj.mjOBJ_BODY, marker_body)
-            self.model.body_pos[body_id] = (0.0, 0.0, -10.0)
-            self.model.body_quat[body_id] = (1.0, 0.0, 0.0, 0.0)
 
     def _initialize_ik_targets(self) -> None:
         """Create four IK frames; the two drawer frames are refreshed live."""
@@ -1249,6 +1194,18 @@ class MujocoIKController:
         return self.backend.action_dict(self._recording_action)
 
     @property
+    def recording_task_phase(self) -> int:
+        """One-based semantic phase used as the current frame's policy input."""
+
+        return self._recording_task_phase
+
+    @property
+    def recording_next_task_phase(self) -> int:
+        """One-based phase-transition target associated with the current frame."""
+
+        return self._recording_next_task_phase
+
+    @property
     def recording_metadata(self) -> dict[str, object]:
         """Episode-level fields used for recording coverage and success reports."""
 
@@ -1273,6 +1230,39 @@ class MujocoIKController:
         )
         frames = max(2, round(duration_s * self.backend.config.fps))
         self.motion = _Motion(start, clipped_target, frames, after)
+
+    def _advance_task_phase(self, task_phase: int) -> None:
+        """Advance the semantic task state without allowing backward transitions.
+
+        A perturbation can make the cube fall back into the storage bin during
+        placement. The expert then repeats its grasp routine, but the semantic
+        phase remains at placement so that the recorded state machine is
+        compatible with a forward-only System 2 controller.
+        """
+
+        if not 1 <= task_phase <= TASK_PHASE_COUNT:
+            raise ValueError(f"Invalid semantic task phase: {task_phase}")
+        self.task_phase = max(self.task_phase, task_phase)
+
+    def _next_task_phase_target(self) -> int:
+        """Return the transition target for the action generated on this frame.
+
+        The final five frames before a semantic boundary target the following
+        phase. This supplies enough consecutive transition labels for the future
+        two-out-of-three phase vote; all other frames target the current phase.
+        """
+
+        next_phase = self.task_phase + 1
+        expected_after = TASK_PHASE_TRANSITION_AFTER.get(self.task_phase)
+        if expected_after is None or self.motion is None:
+            return self.task_phase
+        remaining_frames = self.motion.frame_count - self.motion.frame_index
+        if (
+            self.motion.after == expected_after
+            and remaining_frames < TASK_PHASE_TRANSITION_WINDOW_FRAMES
+        ):
+            return next_phase
+        return self.task_phase
 
     def _perturbed_target(self) -> np.ndarray:
         current = self._current_action()
@@ -1491,6 +1481,7 @@ class MujocoIKController:
                 fingers={"l": FINGER_OPEN, "r": FINGER_OPEN},
             )
         elif self.phase == "cube_ik":
+            self._advance_task_phase(2)
             self._select_post_drawer_hands_and_targets()
             assert (
                 self.cube_hand is not None
@@ -1574,6 +1565,7 @@ class MujocoIKController:
                     f"current z={cube_z:.4f} m)",
                 )
                 return
+            self._advance_task_phase(3)
             targets = {name: value for name, value in self.initial_targets.items() if name != base}
             self._start_motion(
                 targets,
@@ -1848,6 +1840,7 @@ class MujocoIKController:
             )
         elif self.phase == "cube_above_drawer":
             assert self.cube_hand is not None
+            self._advance_task_phase(4)
             target, rotation = self.ik_targets["cube_place"]
             targets = self._solve_to(
                 side=self.cube_hand,
@@ -1889,6 +1882,7 @@ class MujocoIKController:
                     f"cube is not fully inside drawer {self.drawer_index}",
                 )
                 return
+            self._advance_task_phase(5)
             self._start_motion(
                 self._rest_targets(self.cube_hand),
                 after="center_lateral",
@@ -2045,4 +2039,6 @@ class MujocoIKController:
             self._recording_action = self.perturbation_resume_target.copy()
         else:
             self._recording_action = executed_action.copy()
+        self._recording_task_phase = self.task_phase
+        self._recording_next_task_phase = self._next_task_phase_target()
         return executed_action

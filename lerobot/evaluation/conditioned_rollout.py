@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import math
 import time
 from pathlib import Path
 
 import numpy as np
 import torch
+from hepha_lerobot.conditioning import drawer_condition, drawer_task
+from hepha_lerobot.training.train import resolve_device
 from lerobot.configs import PreTrainedConfig
-from lerobot.policies import get_policy_class, make_pre_post_processors
 from lerobot.policies.utils import prepare_observation_for_inference
 from lerobot.utils.constants import OBS_ENV_STATE, OBS_IMAGES, OBS_STATE
 from lerobot.utils.visualization_utils import (
@@ -18,9 +20,10 @@ from lerobot.utils.visualization_utils import (
     shutdown_visualization,
 )
 
-from hepha_lerobot.conditioning import drawer_condition, drawer_task
-from hepha_lerobot.training.train import resolve_device
+from lerobot.policies import get_policy_class, make_pre_post_processors
 from simulation import SimulationConfig, create_backend
+from simulation.backends.mujoco import MujocoBackend
+from simulation.backends.mujoco.episode import initialize_task_episode
 from simulation.base import parse_backend_options
 from simulation.view import _parse_bool
 
@@ -38,6 +41,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--drawer-index", type=int, required=True)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--n-action-steps", type=int, default=None)
+    parser.add_argument("--temporal-ensemble-coeff", type=float, default=None)
     parser.add_argument("--viewer", type=_parse_bool, default=True)
     parser.add_argument("--debug", type=_parse_bool, default=False)
     parser.add_argument("--display-data", type=_parse_bool, default=False)
@@ -50,10 +55,56 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _load_policy(policy_path: Path, device: str):
+def _apply_inference_overrides(
+    policy_config,
+    *,
+    n_action_steps: int | None,
+    temporal_ensemble_coeff: float | None,
+) -> None:
+    if n_action_steps is not None:
+        if n_action_steps <= 0:
+            raise ValueError("--n-action-steps must be positive")
+        if not hasattr(policy_config, "n_action_steps"):
+            raise ValueError(
+                f"Policy {policy_config.type!r} does not support --n-action-steps"
+            )
+        chunk_size = getattr(policy_config, "chunk_size", None)
+        if chunk_size is not None and n_action_steps > chunk_size:
+            raise ValueError(
+                f"--n-action-steps ({n_action_steps}) cannot exceed the policy "
+                f"chunk size ({chunk_size})"
+            )
+        policy_config.n_action_steps = n_action_steps
+
+    if temporal_ensemble_coeff is None:
+        return
+    if not math.isfinite(temporal_ensemble_coeff) or temporal_ensemble_coeff < 0.0:
+        raise ValueError("--temporal-ensemble-coeff must be finite and non-negative")
+    if policy_config.type != "act" or not hasattr(
+        policy_config, "temporal_ensemble_coeff"
+    ):
+        raise ValueError("--temporal-ensemble-coeff is only supported for ACT")
+    effective_action_steps = getattr(policy_config, "n_action_steps", None)
+    if effective_action_steps != 1:
+        raise ValueError("Temporal ensembling requires --n-action-steps 1")
+    policy_config.temporal_ensemble_coeff = temporal_ensemble_coeff
+
+
+def _load_policy(
+    policy_path: Path,
+    device: str,
+    *,
+    n_action_steps: int | None = None,
+    temporal_ensemble_coeff: float | None = None,
+):
     policy_config = PreTrainedConfig.from_pretrained(policy_path)
     policy_config.device = device
     policy_config.pretrained_path = policy_path
+    _apply_inference_overrides(
+        policy_config,
+        n_action_steps=n_action_steps,
+        temporal_ensemble_coeff=temporal_ensemble_coeff,
+    )
     policy_class = get_policy_class(policy_config.type)
     policy = policy_class.from_pretrained(policy_path, config=policy_config)
     policy.to(device)
@@ -89,12 +140,23 @@ def run(args: argparse.Namespace) -> None:
     device = resolve_device(args.device)
     task = drawer_task(args.task, args.drawer_index)
     policy, policy_config, preprocessor, postprocessor = _load_policy(
-        args.policy_path, device
+        args.policy_path,
+        device,
+        n_action_steps=args.n_action_steps,
+        temporal_ensemble_coeff=args.temporal_ensemble_coeff,
     )
     if OBS_ENV_STATE not in (policy_config.input_features or {}):
         raise ValueError(
             "The policy does not expect observation.environment_state. Train it on "
             "a drawer-conditioned Hepha dataset before using this evaluator."
+        )
+    if hasattr(policy_config, "n_action_steps"):
+        print(
+            "Policy inference: "
+            f"n_action_steps={policy_config.n_action_steps}, "
+            "temporal_ensemble_coeff="
+            f"{getattr(policy_config, 'temporal_ensemble_coeff', None)}",
+            flush=True,
         )
 
     simulation_config = SimulationConfig(
@@ -113,7 +175,13 @@ def run(args: argparse.Namespace) -> None:
 
     try:
         with create_backend(args.backend, simulation_config) as backend:
-            backend.reset(seed=args.seed)
+            if isinstance(backend, MujocoBackend):
+                # Match the exact pre-demonstration state used by the recorder,
+                # including seeded cube placement. No IK controller is created:
+                # every action after this initialization comes from the policy.
+                initialize_task_episode(backend, seed=args.seed)
+            else:
+                backend.reset(seed=args.seed)
             state_names = tuple(
                 name
                 for name, feature_type in backend.observation_features.items()

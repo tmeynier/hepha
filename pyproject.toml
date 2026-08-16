@@ -26,6 +26,7 @@ hepha-record = "hepha_lerobot.recording.record:main"
 hepha-policies = "hepha_lerobot.policies.catalog:main"
 hepha-train = "hepha_lerobot.training.train:main"
 hepha-evaluate = "hepha_lerobot.evaluation.rollout:main"
+hepha-eval-loss = "hepha_lerobot.evaluation.offline_loss:main"
 
 [tool.setuptools]
 package-dir = {"" = "lerobot", "hepha_lerobot" = "lerobot", "simulation" = "simulation"}
@@ -35,6 +36,7 @@ packages = [
     "hepha_lerobot.datasets",
     "hepha_lerobot.evaluation",
     "hepha_lerobot.policies",
+    "hepha_lerobot.policies.hepha_act_phase",
     "hepha_lerobot.recording",
     "hepha_lerobot.training",
     "simulation",

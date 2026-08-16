@@ -13,11 +13,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lerobot.datasets import LeRobotDataset, merge_datasets
-
-from hepha_lerobot.conditioning import DEFAULT_TASK, drawer_task
+from hepha_lerobot.conditioning import (
+    DEFAULT_TASK,
+    drawer_task,
+    validate_task_phase,
+)
 from hepha_lerobot.datasets import add_robot_frame, create_dataset
 
+from lerobot.datasets import LeRobotDataset, merge_datasets
 from simulation import SimulationConfig, create_backend
 from simulation.base import parse_backend_options
 from simulation.view import _ensure_mjpython_on_macos, _parse_bool
@@ -75,6 +78,8 @@ class _DeferredFrame:
     observation: dict[str, Any]
     render_state: Any
     action: dict[str, Any]
+    current_task_phase: int
+    next_task_phase: int
 
 
 @dataclass(frozen=True)
@@ -280,6 +285,19 @@ def _recording_metadata(controller: Any) -> tuple[int | None, str | None]:
     )
 
 
+def _recording_task_phases(controller: Any) -> tuple[int, int]:
+    """Read the semantic input and transition target for the generated action."""
+
+    current = getattr(controller, "recording_task_phase", None)
+    next_phase = getattr(controller, "recording_next_task_phase", None)
+    if current is None or next_phase is None:
+        raise RuntimeError(
+            f"Controller {type(controller).__name__!r} must expose "
+            "recording_task_phase and recording_next_task_phase"
+        )
+    return validate_task_phase(current), validate_task_phase(next_phase)
+
+
 def _record_worker(
     worker_id: int,
     config: _WorkerConfig,
@@ -376,12 +394,17 @@ def _record_worker(
                             render_state = None
                         action = backend.send_action(controller.action(progress))
                         expert_action = getattr(controller, "recording_action", action)
+                        current_task_phase, next_task_phase = _recording_task_phases(
+                            controller
+                        )
                         if use_deferred_rendering:
                             deferred_frames.append(
                                 _DeferredFrame(
                                     observation=observation,
                                     render_state=render_state,
                                     action=expert_action,
+                                    current_task_phase=current_task_phase,
+                                    next_task_phase=next_task_phase,
                                 )
                             )
                         else:
@@ -391,6 +414,8 @@ def _record_worker(
                                 action=expert_action,
                                 task=episode_task,
                                 drawer_index=drawer_index,
+                                current_task_phase=current_task_phase,
+                                next_task_phase=next_task_phase,
                             )
                         backend.step()
                         recorded_frames += 1
@@ -429,6 +454,10 @@ def _record_worker(
                                     action=deferred_frame.action,
                                     task=episode_task,
                                     drawer_index=drawer_index,
+                                    current_task_phase=(
+                                        deferred_frame.current_task_phase
+                                    ),
+                                    next_task_phase=deferred_frame.next_task_phase,
                                 )
                         dataset.save_episode()
                         worker_saved_episodes += 1

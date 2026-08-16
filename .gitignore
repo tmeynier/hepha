@@ -11,3 +11,12 @@ __pycache__/
 /datasets/
 /outputs/
 /wandb/
+
+# Trained policies and checkpoints
+/models/
+/runs/
+/checkpoints/
+*.safetensors
+*.pt
+*.pth
+*.ckpt

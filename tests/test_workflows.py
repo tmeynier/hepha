@@ -3,6 +3,9 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 
+from hepha_lerobot.evaluation.conditioned_rollout import (
+    _apply_inference_overrides,
+)
 from hepha_lerobot.evaluation.rollout import (
     build_rollout_command,
 )
@@ -56,6 +59,8 @@ def test_evaluate_command_uses_conditioned_rollout(monkeypatch) -> None:
         drawer_index=4,
         seed=7,
         device="cpu",
+        n_action_steps=1,
+        temporal_ensemble_coeff=0.01,
         headless=True,
         debug=False,
         display_data=False,
@@ -68,6 +73,26 @@ def test_evaluate_command_uses_conditioned_rollout(monkeypatch) -> None:
     assert "--drawer-index=4" in command
     assert "--task=move" in command
     assert "--viewer=false" in command
+    assert "--n-action-steps=1" in command
+    assert "--temporal-ensemble-coeff=0.01" in command
+
+
+def test_act_inference_overrides_enable_per_frame_temporal_ensembling() -> None:
+    config = Namespace(
+        type="act",
+        chunk_size=100,
+        n_action_steps=10,
+        temporal_ensemble_coeff=None,
+    )
+
+    _apply_inference_overrides(
+        config,
+        n_action_steps=1,
+        temporal_ensemble_coeff=0.01,
+    )
+
+    assert config.n_action_steps == 1
+    assert config.temporal_ensemble_coeff == 0.01
 
 
 def test_rollout_options_after_policy_path_are_not_forwarded(monkeypatch) -> None:

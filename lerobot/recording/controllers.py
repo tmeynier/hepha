@@ -21,6 +21,12 @@ class DemonstrationController(Protocol):
 
     def action(self, progress: float) -> Any: ...
 
+    @property
+    def recording_task_phase(self) -> int: ...
+
+    @property
+    def recording_next_task_phase(self) -> int: ...
+
 
 def _load_path(path: str) -> Any:
     module_name, separator, attribute = path.partition(":")

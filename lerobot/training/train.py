@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 from pathlib import Path
 
 from hepha_lerobot.cli import find_environment_executable, passthrough_arguments
@@ -39,8 +40,13 @@ def build_train_command(args: argparse.Namespace) -> list[str]:
     policy_type = args.policy_type
     output_dir = args.output_dir or Path("outputs") / policy_type
     job_name = args.job_name or f"hepha_{policy_type}"
+    executable = (
+        [sys.executable, "-m", "hepha_lerobot.training.phase_train"]
+        if policy_type == "hepha_act_phase"
+        else [find_environment_executable("lerobot-train")]
+    )
     command = [
-        find_environment_executable("lerobot-train"),
+        *executable,
         f"--dataset.repo_id={args.repo_id}",
         f"--dataset.root={args.root}",
         f"--policy.type={policy_type}",
