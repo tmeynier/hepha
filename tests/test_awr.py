@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pickle
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -45,6 +47,15 @@ def test_discounted_returns_reset_at_episode_boundaries() -> None:
     dataset = AWRReturnDataset(_TinyRewardDataset(), discount=0.5)
     returns = [float(dataset[index]["awr.return"].item()) for index in range(4)]
     assert returns == pytest.approx([2.0, 2.0, 1.0, 4.0])
+
+
+def test_awr_dataset_can_be_serialized_for_spawn_workers() -> None:
+    dataset = AWRReturnDataset(_TinyRewardDataset(), discount=0.5)
+
+    restored = pickle.loads(pickle.dumps(dataset))
+
+    assert len(restored) == 4
+    assert restored[0]["awr.return"].item() == pytest.approx(2.0)
 
 
 def test_awr_config_rejects_nonpositive_temperature() -> None:

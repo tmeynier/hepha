@@ -44,7 +44,13 @@ class _AWRDataset(Dataset):
         return len(self.dataset)
 
     def __getattr__(self, name: str) -> Any:
-        return getattr(self.dataset, name)
+        # ``spawn`` reconstructs this wrapper before restoring ``dataset``.
+        # Accessing ``self.dataset`` through __getattr__ in that interval would
+        # recursively call this method until Python reaches its recursion limit.
+        dataset = self.__dict__.get("dataset")
+        if dataset is None:
+            raise AttributeError(name)
+        return getattr(dataset, name)
 
 
 class AWRReturnDataset(_AWRDataset):
