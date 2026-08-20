@@ -379,6 +379,7 @@ Fit only the value head. ACT parameters and BatchNorm buffers remain frozen:
   --batch-size 8 \
   --num-workers 4 \
   --wandb \
+  --policy-repo-id tmeynier/hepha_act_awr_value_i0 \
   -- \
   --dataset.eval_split=0.1 \
   --eval_steps=2000 \
@@ -402,8 +403,14 @@ frame:
   --device cuda \
   --batch-size 32 \
   --num-workers 4 \
+  --push-to-hub \
+  --hub-repo-id tmeynier/hepha_act_awr_advantages_i0 \
   --overwrite
 ```
+
+The rollout dataset, fitted value checkpoint, frozen advantage table, and actor
+checkpoint are therefore all stored in separate Hugging Face repositories. A new
+Pod can resume from the uploaded artifacts without access to an earlier Pod's disk.
 
 Fit only ACT using the fixed weights. The value head remains frozen:
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 from pathlib import Path
 
@@ -13,6 +14,7 @@ import torch
 from hepha_lerobot.awr.dataset import discounted_return_map
 from hepha_lerobot.evaluation.conditioned_rollout import _load_policy
 from hepha_lerobot.training.train import resolve_device
+from huggingface_hub import HfApi
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -28,6 +30,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--push-to-hub", action="store_true")
+    parser.add_argument(
+        "--hub-repo-id",
+        help="Hugging Face dataset repository used to preserve the advantage artifact",
+    )
+    parser.add_argument("--private", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -39,6 +47,8 @@ def run(args: argparse.Namespace) -> Path:
         raise FileNotFoundError(f"Replay dataset not found: {args.root}")
     if args.batch_size <= 0 or args.num_workers < 0:
         raise ValueError("batch-size must be positive and num-workers non-negative")
+    if args.push_to_hub and not args.hub_repo_id:
+        raise ValueError("--push-to-hub requires --hub-repo-id")
     if args.output.exists() and not args.overwrite:
         raise FileExistsError(f"Advantage file exists: {args.output}")
 
@@ -105,22 +115,26 @@ def run(args: argparse.Namespace) -> Path:
             "weight": weights,
         }
     )
-    metadata = {
+    artifact_metadata = {
+        "repo_id": args.repo_id,
+        "value_policy": str(args.value_policy),
+        "discount": config.awr_discount,
+        "beta": config.awr_beta,
+        "maximum_weight": config.awr_max_weight,
+        "normalized_advantage": config.awr_normalize_advantage,
+        "frames": len(indices),
+        "advantage_mean": advantage_mean,
+        "advantage_std": advantage_std,
+        "weight_mean": float(weights.mean()),
+        "weight_min": float(weights.min()),
+        "weight_max": float(weights.max()),
+    }
+    parquet_metadata = {
         **(table.schema.metadata or {}),
-        b"hepha_awr": json.dumps(
-            {
-                "repo_id": args.repo_id,
-                "value_policy": str(args.value_policy),
-                "discount": config.awr_discount,
-                "beta": config.awr_beta,
-                "maximum_weight": config.awr_max_weight,
-                "normalized_advantage": config.awr_normalize_advantage,
-            },
-            sort_keys=True,
-        ).encode(),
+        b"hepha_awr": json.dumps(artifact_metadata, sort_keys=True).encode(),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table.replace_schema_metadata(metadata), args.output)
+    pq.write_table(table.replace_schema_metadata(parquet_metadata), args.output)
     print(f"Fixed advantages written to {args.output}")
     print(f"Frames: {len(indices)}")
     print(f"Advantage mean/std: {advantage_mean:.6f}/{advantage_std:.6f}")
@@ -128,6 +142,39 @@ def run(args: argparse.Namespace) -> Path:
         f"Weight mean/min/max: {weights.mean():.6f}/"
         f"{weights.min():.6f}/{weights.max():.6f}"
     )
+    if args.push_to_hub:
+        api = HfApi()
+        api.create_repo(
+            repo_id=args.hub_repo_id,
+            repo_type="dataset",
+            private=args.private,
+            exist_ok=True,
+        )
+        api.upload_file(
+            path_or_fileobj=args.output,
+            path_in_repo="advantages.parquet",
+            repo_id=args.hub_repo_id,
+            repo_type="dataset",
+            commit_message="Upload frozen Hepha AWR advantages",
+        )
+        api.upload_file(
+            path_or_fileobj=io.BytesIO(
+                json.dumps(artifact_metadata, indent=2, sort_keys=True).encode()
+            ),
+            path_in_repo="metadata.json",
+            repo_id=args.hub_repo_id,
+            repo_type="dataset",
+            commit_message="Upload Hepha AWR advantage metadata",
+        )
+        print(
+            "Frozen advantages uploaded to "
+            f"https://huggingface.co/datasets/{args.hub_repo_id}"
+        )
+    else:
+        print(
+            "WARNING: advantages are local only; pass --push-to-hub and "
+            "--hub-repo-id to preserve them remotely"
+        )
     return args.output
 
 
