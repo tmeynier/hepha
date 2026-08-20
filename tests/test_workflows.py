@@ -5,13 +5,16 @@ from pathlib import Path
 
 from hepha_lerobot.evaluation.conditioned_rollout import (
     _apply_inference_overrides,
+    _policy_observation,
 )
+from hepha_lerobot.evaluation.phase_control import PhaseTransitionState
 from hepha_lerobot.evaluation.rollout import (
     build_rollout_command,
 )
 from hepha_lerobot.evaluation.rollout import (
     parse_args as parse_rollout_args,
 )
+from hepha_lerobot.evaluation.task_sweep import TaskMilestones
 from hepha_lerobot.policies import available_policy_types
 from hepha_lerobot.recording.record import parse_args as parse_record_args
 from hepha_lerobot.training.train import build_train_command
@@ -93,6 +96,94 @@ def test_act_inference_overrides_enable_per_frame_temporal_ensembling() -> None:
 
     assert config.n_action_steps == 1
     assert config.temporal_ensemble_coeff == 0.01
+
+
+def test_phase_act_supports_act_temporal_ensembling() -> None:
+    config = Namespace(
+        type="hepha_act_phase",
+        chunk_size=100,
+        n_action_steps=10,
+        temporal_ensemble_coeff=None,
+    )
+
+    _apply_inference_overrides(
+        config,
+        n_action_steps=1,
+        temporal_ensemble_coeff=0.01,
+    )
+
+    assert config.n_action_steps == 1
+    assert config.temporal_ensemble_coeff == 0.01
+
+
+def test_phase_state_requires_two_of_three_votes_for_immediate_next_phase() -> None:
+    state = PhaseTransitionState()
+
+    assert not state.observe(2)
+    assert not state.observe(1)
+    assert state.observe(2)
+    assert state.current_phase == 2
+    assert state.predictions == ()
+
+    assert not state.observe(4)
+    assert not state.observe(4)
+    assert not state.observe(3)
+    assert state.current_phase == 2
+    assert state.observe(3)
+    assert state.current_phase == 3
+
+
+def test_phase_policy_observation_appends_current_phase_one_hot() -> None:
+    raw_observation = {"joint": 0.25, "head_camera": 0}
+
+    observation = _policy_observation(
+        raw_observation,
+        state_names=("joint",),
+        camera="head_camera",
+        drawer_index=4,
+        current_phase=3,
+    )
+
+    environment_state = observation["observation.environment_state"]
+    assert environment_state.shape == (14,)
+    assert environment_state[3] == 1.0
+    assert environment_state[9 + 2] == 1.0
+    assert environment_state.sum() == 2.0
+
+
+def test_task_milestones_are_cumulative_and_close_only_after_insertion() -> None:
+    milestones = TaskMilestones()
+
+    milestones.update(
+        drawer_opening_m=0.0,
+        stable_cube_grasp=False,
+        cube_inside_drawer=False,
+    )
+    assert not milestones.drawer_closed_after_insertion
+
+    milestones.update(
+        drawer_opening_m=0.045,
+        stable_cube_grasp=True,
+        cube_inside_drawer=False,
+    )
+    assert milestones.drawer_opened
+    assert milestones.cube_grasped
+    assert not milestones.drawer_closed_after_insertion
+
+    milestones.update(
+        drawer_opening_m=0.045,
+        stable_cube_grasp=False,
+        cube_inside_drawer=True,
+    )
+    assert milestones.cube_in_drawer
+    assert not milestones.drawer_closed_after_insertion
+
+    milestones.update(
+        drawer_opening_m=0.005,
+        stable_cube_grasp=False,
+        cube_inside_drawer=True,
+    )
+    assert milestones.drawer_closed_after_insertion
 
 
 def test_rollout_options_after_policy_path_are_not_forwarded(monkeypatch) -> None:

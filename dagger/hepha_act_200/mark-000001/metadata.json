@@ -1,0 +1,16 @@
+{
+  "camera": "head_camera",
+  "created_at": "2026-08-18T15:53:12.976262+00:00",
+  "current_task_phase": 1,
+  "domain_randomization_scale": 0.0,
+  "drawer_index": 1,
+  "fps": 30,
+  "next_task_phase": 1,
+  "policy_path": "/Users/tristanmeynier/Documents/hepha/hepha/models/hepha_act_200",
+  "policy_type": "act",
+  "seed": 20001,
+  "source_episode": 1,
+  "source_step": 943,
+  "task": "Open drawer 1, pick up the cube, place it inside that drawer, and close the drawer.",
+  "version": 1
+}

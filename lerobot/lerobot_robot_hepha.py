@@ -5,5 +5,13 @@ from hepha_lerobot.hepha_simulation import HephaSimulation
 from hepha_lerobot.policies.hepha_act_phase.configuration_hepha_act_phase import (
     HephaActPhaseConfig,
 )
+from hepha_lerobot.policies.hepha_act_awr.configuration_hepha_act_awr import (
+    HephaActAWRConfig,
+)
 
-__all__ = ["HephaActPhaseConfig", "HephaSimulation", "HephaSimulationConfig"]
+__all__ = [
+    "HephaActAWRConfig",
+    "HephaActPhaseConfig",
+    "HephaSimulation",
+    "HephaSimulationConfig",
+]

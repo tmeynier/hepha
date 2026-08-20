@@ -19,6 +19,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--job-name", default=None)
     parser.add_argument("--policy-type", default="act")
+    parser.add_argument(
+        "--policy-path",
+        type=Path,
+        default=None,
+        help="Initialize training from a checkpoint of --policy-type",
+    )
     parser.add_argument("--device", default="auto")
     parser.add_argument("--steps", type=int, default=100_000)
     parser.add_argument("--batch-size", type=int, default=8)
@@ -38,18 +44,24 @@ def resolve_device(requested: str) -> str:
 
 def build_train_command(args: argparse.Namespace) -> list[str]:
     policy_type = args.policy_type
+    policy_path = getattr(args, "policy_path", None)
     output_dir = args.output_dir or Path("outputs") / policy_type
     job_name = args.job_name or f"hepha_{policy_type}"
-    executable = (
-        [sys.executable, "-m", "hepha_lerobot.training.phase_train"]
-        if policy_type == "hepha_act_phase"
-        else [find_environment_executable("lerobot-train")]
-    )
+    if policy_type == "hepha_act_phase":
+        executable = [sys.executable, "-m", "hepha_lerobot.training.phase_train"]
+    elif policy_type == "hepha_act_awr":
+        executable = [sys.executable, "-m", "hepha_lerobot.training.awr_train"]
+    else:
+        executable = [find_environment_executable("lerobot-train")]
     command = [
         *executable,
         f"--dataset.repo_id={args.repo_id}",
         f"--dataset.root={args.root}",
-        f"--policy.type={policy_type}",
+        (
+            f"--policy.path={policy_path}"
+            if policy_path is not None
+            else f"--policy.type={policy_type}"
+        ),
         f"--output_dir={output_dir}",
         f"--job_name={job_name}",
         f"--policy.device={resolve_device(args.device)}",
@@ -82,6 +94,19 @@ def main() -> None:
         )
     if not args.root.is_dir() and not args.dry_run:
         raise FileNotFoundError(f"LeRobot dataset root not found: {args.root}")
+    if args.policy_path is not None and not args.policy_path.is_dir() and not args.dry_run:
+        raise FileNotFoundError(f"Policy checkpoint not found: {args.policy_path}")
+    if args.policy_path is not None and args.policy_path.is_dir():
+        from lerobot.configs import PreTrainedConfig
+        from lerobot.utils.import_utils import register_third_party_plugins
+
+        register_third_party_plugins()
+        checkpoint_type = PreTrainedConfig.from_pretrained(args.policy_path).type
+        if checkpoint_type != args.policy_type:
+            raise ValueError(
+                f"--policy-path contains {checkpoint_type!r}, but --policy-type is "
+                f"{args.policy_type!r}. Convert the checkpoint first if needed."
+            )
     command = build_train_command(args)
     print(" ".join(map(str, command)))
     if not args.dry_run:

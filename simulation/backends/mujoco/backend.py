@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import colorsys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.resources import as_file, files
 from pathlib import Path
@@ -699,7 +700,12 @@ class MujocoBackend(SimulationBackend):
             self._viewer.opt.geomgroup[IK_TARGET_GEOM_GROUP] = debug
             self._viewer.opt.geomgroup[HIDDEN_MARKER_GEOM_GROUP] = False
 
-    def open_viewer(self, *, debug: bool = False) -> None:
+    def open_viewer(
+        self,
+        *,
+        debug: bool = False,
+        key_callback: Callable[[int], None] | None = None,
+    ) -> None:
         if self._viewer is not None:
             return
         import mujoco.viewer
@@ -709,6 +715,7 @@ class MujocoBackend(SimulationBackend):
             self.data,
             show_left_ui=True,
             show_right_ui=True,
+            key_callback=key_callback,
         )
         self._configure_viewer_groups(debug=debug)
 

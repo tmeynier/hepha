@@ -9,11 +9,18 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from hepha_lerobot.conditioning import drawer_condition, drawer_task
+from hepha_lerobot.conditioning import (
+    TASK_PHASE_COUNT,
+    drawer_condition,
+    drawer_task,
+    task_phase_condition,
+)
+from hepha_lerobot.evaluation.phase_control import PhaseTransitionState
 from hepha_lerobot.training.train import resolve_device
 from lerobot.configs import PreTrainedConfig
 from lerobot.policies.utils import prepare_observation_for_inference
 from lerobot.utils.constants import OBS_ENV_STATE, OBS_IMAGES, OBS_STATE
+from lerobot.utils.import_utils import register_third_party_plugins
 from lerobot.utils.visualization_utils import (
     init_visualization,
     log_visualization_data,
@@ -80,10 +87,12 @@ def _apply_inference_overrides(
         return
     if not math.isfinite(temporal_ensemble_coeff) or temporal_ensemble_coeff < 0.0:
         raise ValueError("--temporal-ensemble-coeff must be finite and non-negative")
-    if policy_config.type != "act" or not hasattr(
+    if policy_config.type not in {"act", "hepha_act_phase", "hepha_act_awr"} or not hasattr(
         policy_config, "temporal_ensemble_coeff"
     ):
-        raise ValueError("--temporal-ensemble-coeff is only supported for ACT")
+        raise ValueError(
+            "--temporal-ensemble-coeff is only supported for ACT-derived policies"
+        )
     effective_action_steps = getattr(policy_config, "n_action_steps", None)
     if effective_action_steps != 1:
         raise ValueError("Temporal ensembling requires --n-action-steps 1")
@@ -97,6 +106,7 @@ def _load_policy(
     n_action_steps: int | None = None,
     temporal_ensemble_coeff: float | None = None,
 ):
+    register_third_party_plugins()
     policy_config = PreTrainedConfig.from_pretrained(policy_path)
     policy_config.device = device
     policy_config.pretrained_path = policy_path
@@ -124,12 +134,18 @@ def _policy_observation(
     state_names: tuple[str, ...],
     camera: str,
     drawer_index: int,
+    current_phase: int | None = None,
 ) -> dict[str, np.ndarray]:
+    environment_state = drawer_condition(drawer_index)
+    if current_phase is not None:
+        environment_state = np.concatenate(
+            [environment_state, task_phase_condition(current_phase)]
+        ).astype(np.float32, copy=False)
     return {
         OBS_STATE: np.asarray(
             [raw_observation[name] for name in state_names], dtype=np.float32
         ),
-        OBS_ENV_STATE: drawer_condition(drawer_index),
+        OBS_ENV_STATE: environment_state,
         f"{OBS_IMAGES}.{camera}": np.asarray(raw_observation[camera]),
     }
 
@@ -149,6 +165,26 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError(
             "The policy does not expect observation.environment_state. Train it on "
             "a drawer-conditioned Hepha dataset before using this evaluator."
+        )
+    phase_aware = policy_config.type == "hepha_act_phase"
+    phase_state = PhaseTransitionState() if phase_aware else None
+    if phase_aware:
+        environment_shape = policy_config.input_features[OBS_ENV_STATE].shape
+        expected_shape = (9 + TASK_PHASE_COUNT,)
+        if environment_shape != expected_shape:
+            raise ValueError(
+                f"Phase-aware policy expects {OBS_ENV_STATE} shape {environment_shape}; "
+                f"Hepha phase rollout requires {expected_shape}"
+            )
+        if getattr(policy_config, "n_action_steps", None) != 1:
+            raise ValueError(
+                "Phase-aware rollout requires n_action_steps=1 so that action and "
+                "phase predictions are refreshed every frame"
+            )
+        print(
+            "Phase control: initial phase=1, transition=2-of-3 votes for "
+            "current_phase+1",
+            flush=True,
         )
     if hasattr(policy_config, "n_action_steps"):
         print(
@@ -202,6 +238,9 @@ def run(args: argparse.Namespace) -> None:
                     state_names=state_names,
                     camera=args.camera,
                     drawer_index=args.drawer_index,
+                    current_phase=(
+                        phase_state.current_phase if phase_state is not None else None
+                    ),
                 )
                 batch = prepare_observation_for_inference(
                     observation,
@@ -211,7 +250,19 @@ def run(args: argparse.Namespace) -> None:
                 )
                 with torch.inference_mode():
                     batch = preprocessor(batch)
-                    action = postprocessor(policy.select_action(batch))
+                    if phase_state is not None:
+                        action, phase_logits = policy.select_action_with_phase(batch)
+                        predicted_phase = int(phase_logits.argmax(dim=-1).item()) + 1
+                        previous_phase = phase_state.current_phase
+                        if phase_state.observe(predicted_phase):
+                            print(
+                                "Task phase transition: "
+                                f"{previous_phase} -> {phase_state.current_phase}",
+                                flush=True,
+                            )
+                    else:
+                        action = policy.select_action(batch)
+                    action = postprocessor(action)
                 values = action.squeeze(0).detach().cpu().numpy()
                 if values.shape != (len(action_names),):
                     raise ValueError(

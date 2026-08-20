@@ -27,16 +27,26 @@ hepha-policies = "hepha_lerobot.policies.catalog:main"
 hepha-train = "hepha_lerobot.training.train:main"
 hepha-evaluate = "hepha_lerobot.evaluation.rollout:main"
 hepha-eval-loss = "hepha_lerobot.evaluation.offline_loss:main"
+hepha-eval-grasp = "hepha_lerobot.evaluation.grasp_sweep:main"
+hepha-eval-task = "hepha_lerobot.evaluation.task_sweep:main"
+hepha-dagger-mark = "hepha_lerobot.dagger.mark:main"
+hepha-dagger-correct = "hepha_lerobot.dagger.correct:main"
+hepha-dagger-merge = "hepha_lerobot.dagger.merge:main"
+hepha-awr-record = "hepha_lerobot.awr.record:main"
+hepha-awr-init = "hepha_lerobot.awr.initialize:main"
 
 [tool.setuptools]
 package-dir = {"" = "lerobot", "hepha_lerobot" = "lerobot", "simulation" = "simulation"}
 py-modules = ["lerobot_robot_hepha"]
 packages = [
     "hepha_lerobot",
+    "hepha_lerobot.awr",
+    "hepha_lerobot.dagger",
     "hepha_lerobot.datasets",
     "hepha_lerobot.evaluation",
     "hepha_lerobot.policies",
     "hepha_lerobot.policies.hepha_act_phase",
+    "hepha_lerobot.policies.hepha_act_awr",
     "hepha_lerobot.recording",
     "hepha_lerobot.training",
     "simulation",

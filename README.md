@@ -297,6 +297,96 @@ B --> C
 C --> D
 ```
 
+## ACT advantage-weighted regression (AWR)
+
+Hepha keeps upstream LeRobot ACT as the actor and provides a separate
+`hepha_act_awr` extension. The extension shares ACT's projected camera, robot-state,
+and requested-drawer features with a small scalar value head. ACT's action decoder
+and action-chunk output are unchanged. Training minimizes the advantage-weighted
+ACT objective plus value regression to discounted rollout returns.
+
+Install the updated local entry points after pulling the repository:
+
+```bash
+.venv/bin/python -m pip install -e .
+```
+
+Collect closed-loop rollouts from the original ACT policy. All episodes are retained,
+including failures, and are stored as a normal LeRobot dataset with `next.reward`
+and `next.done`:
+
+```bash
+.venv/bin/hepha-awr-record models/hepha_act_200 \
+  --repo-id tmeynier/hepha_act_awr_rollouts \
+  --root datasets/hepha_act_awr_rollouts \
+  --episodes 100 \
+  --episode-seconds 100 \
+  --seed-start 30000 \
+  --device mps \
+  --n-action-steps 1 \
+  --temporal-ensemble-coeff 0.01 \
+  --domain-randomization-scale 0 \
+  --push-to-hub \
+  --overwrite
+```
+
+The per-transition rewards are:
+
+- `-0.001` every control step.
+- `+1` the first time the selected drawer reaches 40 mm opening.
+- `+3` the first time the elevated cube is stably held by both opposing pads of
+  one gripper.
+- `+2` the first time the cube center enters the selected drawer.
+- `+5` at the terminal step when the cube is inside and the selected drawer is
+  at most 5 mm open.
+- `-2` when robot contact with an external object begins. Gripper/cube contact
+  and selected-drawer-handle contact are allowed.
+- `-0.5` when contact with the selected drawer body (excluding its handle) begins.
+- `-1` when robot/floor contact begins.
+- `-3` when a previously elevated cube begins touching the floor.
+- `-2` when left-arm/right-arm contact begins, including the fingers.
+
+Sustained contacts are charged once on contact onset, rather than once per frame.
+
+Convert the original ACT checkpoint once. This copies every ACT weight exactly and
+randomly initializes only the new value head:
+
+```bash
+.venv/bin/hepha-awr-init \
+  models/hepha_act_200 \
+  models/hepha_act_awr_init
+```
+
+Then train on a CUDA machine with the official LeRobot trainer:
+
+```bash
+.venv/bin/hepha-train \
+  --repo-id tmeynier/hepha_act_awr_rollouts \
+  --root datasets/hepha_act_awr_rollouts \
+  --policy-type hepha_act_awr \
+  --policy-path models/hepha_act_awr_init \
+  --output-dir outputs/hepha_act_awr \
+  --job-name hepha_act_awr \
+  --device cuda \
+  --steps 100000 \
+  --batch-size 8 \
+  --num-workers 4 \
+  --wandb \
+  --policy-repo-id tmeynier/hepha_act_awr \
+  -- \
+  --dataset.eval_split=0.1 \
+  --eval_steps=10000 \
+  --policy.awr_discount=0.999 \
+  --policy.awr_beta=1.0 \
+  --policy.awr_max_weight=20 \
+  --policy.value_loss_weight=0.5 \
+  --wandb.project=hepha
+```
+
+In addition to LeRobot's loss and timing plots, W&B receives `actor_loss`,
+`value_loss`, `value_mean`, `return_mean`, `advantage_mean`, `awr_weight_mean`,
+and `awr_weight_max` from both training and held-out evaluation.
+
 All three sources of data are generally used together to build a strong base 
 policy.
 
@@ -1511,4 +1601,3 @@ should go in 3D space ($\Delta xyz$), and your local robot controller uses IK to
 figure out what joint movements are required.Camera Normalization: Cameras are
 typically resized and normalized to fixed resolutions (e.g., 224x224 RGB) so the
 visual backend can process them regardless of the camera model.
-

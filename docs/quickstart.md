@@ -155,6 +155,67 @@ The equivalent direct command is:
   --duration=30
 ```
 
+## 5. Collect DAgger corrections
+
+First watch policy rollouts. Press Space at a state where a human correction
+should begin. The current MuJoCo integration state and task metadata are saved,
+and that rollout stops. Press N to skip a good episode without saving it, or Q
+to finish. Closing the viewer also ends the command.
+
+```bash
+.venv/bin/hepha-dagger-mark models/hepha_act_phase_200 \
+  --output-dir dagger/hepha_act_phase_200 \
+  --episodes 20 \
+  --episode-seconds 100 \
+  --seed-start 20000 \
+  --device mps \
+  --n-action-steps 1 \
+  --temporal-ensemble-coeff 0.01 \
+  --domain-randomization-scale 0
+```
+
+Then restore each saved state. Use MuJoCo's native Control panel to command the
+actuator targets, press 1–5 when the semantic phase changes, and press Space
+when the short human correction is complete.
+The joint targets are sampled at 30 Hz and Savitzky-Golay smoothed without
+changing the frame count. Hepha then restores the marked state and records a
+physics-consistent replay of the smoothed correction. A correction is discarded
+if Space is not pressed.
+
+```bash
+.venv/bin/hepha-dagger-correct dagger/hepha_act_phase_200 \
+  --repo-id tmeynier/hepha_dagger_corrections \
+  --root datasets/hepha_dagger_corrections \
+  --dataset-schema phase \
+  --max-seconds 30 \
+  --push-to-hub \
+  --overwrite
+```
+
+During correction collection, Space saves, N discards and advances, R discards
+the current attempt and restores the same marked state for another try, and Q
+finishes gracefully. Every accepted correction is finalized first as an
+independent dataset shard. If the command is interrupted, run the same command
+again with `--resume` instead of `--overwrite`; already completed marked states
+are skipped and the final dataset is rebuilt from all durable shards.
+
+Use `--dataset-schema drawer` instead when extending an original ACT dataset
+that has the drawer one-hot condition but no task-phase input or target. Finally,
+merge corrections through LeRobot's native dataset aggregation and optionally
+publish the result:
+
+```bash
+.venv/bin/hepha-dagger-merge \
+  --base-repo-id tmeynier/hepha_mujoco_ik_phase_200 \
+  --base-root datasets/hepha_mujoco_ik_phase_200 \
+  --correction-repo-id tmeynier/hepha_dagger_corrections \
+  --correction-root datasets/hepha_dagger_corrections \
+  --repo-id tmeynier/hepha_mujoco_ik_phase_200_dagger \
+  --root datasets/hepha_mujoco_ik_phase_200_dagger \
+  --push-to-hub \
+  --overwrite
+```
+
 ## Project boundaries and extension points
 
 ```text
