@@ -34,6 +34,8 @@ hepha-dagger-correct = "hepha_lerobot.dagger.correct:main"
 hepha-dagger-merge = "hepha_lerobot.dagger.merge:main"
 hepha-awr-record = "hepha_lerobot.awr.record:main"
 hepha-awr-init = "hepha_lerobot.awr.initialize:main"
+hepha-awr-advantages = "hepha_lerobot.awr.advantages:main"
+hepha-awr-merge = "hepha_lerobot.awr.merge:main"
 
 [tool.setuptools]
 package-dir = {"" = "lerobot", "hepha_lerobot" = "lerobot", "simulation" = "simulation"}

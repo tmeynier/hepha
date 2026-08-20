@@ -12,13 +12,20 @@ from lerobot.processor.converters import batch_to_transition
 from .configuration_hepha_act_awr import HephaActAWRConfig
 
 AWR_RETURN = "awr.return"
+AWR_ADVANTAGE = "awr.advantage"
+AWR_WEIGHT = "awr.weight"
 
 
-def _batch_to_transition_with_return(batch: dict[str, Any]):
+def _batch_to_transition_with_awr(batch: dict[str, Any]):
     transition = batch_to_transition(batch)
-    if AWR_RETURN in batch:
+    awr_data = {
+        key: batch[key]
+        for key in (AWR_RETURN, AWR_ADVANTAGE, AWR_WEIGHT)
+        if key in batch
+    }
+    if awr_data:
         complementary = dict(transition.get(TransitionKey.COMPLEMENTARY_DATA) or {})
-        complementary[AWR_RETURN] = batch[AWR_RETURN]
+        complementary.update(awr_data)
         transition[TransitionKey.COMPLEMENTARY_DATA] = complementary
     return transition
 
@@ -31,5 +38,9 @@ def make_hepha_act_awr_pre_post_processors(
     PolicyProcessorPipeline[PolicyAction, PolicyAction],
 ]:
     preprocessor, postprocessor = make_act_pre_post_processors(config, dataset_stats)
-    preprocessor.to_transition = _batch_to_transition_with_return
+    preprocessor.to_transition = _batch_to_transition_with_awr
     return preprocessor, postprocessor
+
+
+# Kept for checkpoints or external code created by the first Hepha AWR version.
+_batch_to_transition_with_return = _batch_to_transition_with_awr

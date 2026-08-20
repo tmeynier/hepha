@@ -12,7 +12,7 @@ from torch import Tensor, nn
 
 from .configuration_hepha_act_awr import HephaActAWRConfig
 from .evaluation_metrics import accumulate_awr_eval_metrics, reset_awr_eval_metrics
-from .processor_hepha_act_awr import AWR_RETURN
+from .processor_hepha_act_awr import AWR_ADVANTAGE, AWR_RETURN, AWR_WEIGHT
 
 
 class HephaActAWRPolicy(ACTPolicy):
@@ -50,9 +50,21 @@ class HephaActAWRPolicy(ACTPolicy):
             nn.Linear(config.value_hidden_dim, 1),
         )
         self._camera_tokens: list[Tensor] = []
-        self._camera_hook = self.model.encoder_img_feat_input_proj.register_forward_hook(
-            self._capture_camera_token
-        )
+        self._camera_hook = None
+        if config.image_features:
+            self._camera_hook = (
+                self.model.encoder_img_feat_input_proj.register_forward_hook(
+                    self._capture_camera_token
+                )
+            )
+        if config.awr_stage == "value":
+            self.model.requires_grad_(False)
+            self.model.eval()
+            self.value_head.requires_grad_(True)
+        else:
+            self.model.requires_grad_(True)
+            self.value_head.requires_grad_(False)
+            self.value_head.eval()
         if dataset_meta is not None:
             features = getattr(dataset_meta, "features", {})
             if "next.reward" not in features:
@@ -63,12 +75,44 @@ class HephaActAWRPolicy(ACTPolicy):
     ) -> None:
         self._camera_tokens.append(output.mean(dim=(-2, -1)))
 
+    def get_optim_params(self) -> list[dict[str, Any]]:
+        if self.config.awr_stage == "value":
+            return [
+                {
+                    "params": list(self.value_head.parameters()),
+                    "lr": self.config.value_optimizer_lr,
+                    "weight_decay": self.config.value_optimizer_weight_decay,
+                }
+            ]
+        return super().get_optim_params()
+
     def train(self, mode: bool = True) -> HephaActAWRPolicy:
         entering_evaluation = self.training and not mode
         policy = super().train(mode)
+        if self.config.awr_stage == "value":
+            # Frozen BatchNorm buffers are part of the ACT checkpoint too.
+            self.model.eval()
+        else:
+            self.value_head.eval()
         if entering_evaluation:
             reset_awr_eval_metrics()
         return policy
+
+    def _prepare_images(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
+        if not self.config.image_features or OBS_IMAGES in batch:
+            return batch
+        batch = dict(batch)
+        batch[OBS_IMAGES] = [batch[key] for key in self.config.image_features]
+        return batch
+
+    def _encode_value(self, batch: dict[str, Tensor]) -> Tensor:
+        """Encode observations without running ACT's VAE, transformer or decoder."""
+        batch = self._prepare_images(batch)
+        self._camera_tokens.clear()
+        for image in batch.get(OBS_IMAGES, []):
+            camera_features = self.model.backbone(image)["feature_map"]
+            self.model.encoder_img_feat_input_proj(camera_features)
+        return self._value(batch)
 
     def _value(self, batch: dict[str, Tensor]) -> Tensor:
         tokens: list[Tensor] = []
@@ -87,15 +131,41 @@ class HephaActAWRPolicy(ACTPolicy):
         return self.value_head(torch.cat(tokens, dim=-1)).squeeze(-1)
 
     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict[str, float]]:
-        if AWR_RETURN not in batch:
-            raise KeyError(f"Training {self.name!r} requires {AWR_RETURN!r}")
-        if self.config.image_features:
-            batch = dict(batch)
-            batch[OBS_IMAGES] = [batch[key] for key in self.config.image_features]
+        if self.config.awr_stage == "value":
+            return self._forward_value(batch)
+        return self._forward_actor(batch)
 
+    def _forward_value(
+        self, batch: dict[str, Tensor]
+    ) -> tuple[Tensor, dict[str, float]]:
+        if AWR_RETURN not in batch:
+            raise KeyError(f"Value training requires {AWR_RETURN!r}")
+        value = self._encode_value(batch)
+        return_target = batch[AWR_RETURN].float().reshape(-1)
+        if return_target.shape != value.shape:
+            raise ValueError(
+                f"AWR return shape {tuple(return_target.shape)} does not match "
+                f"value shape {tuple(value.shape)}"
+            )
+        value_loss = F.mse_loss(value, return_target)
+        metrics = {
+            "value_loss": value_loss.item(),
+            "value_mean": value.mean().item(),
+            "return_mean": return_target.mean().item(),
+            "value_error_mean": (return_target - value).mean().item(),
+        }
+        if not self.training:
+            accumulate_awr_eval_metrics(metrics, return_target.shape[0])
+        return value_loss, metrics
+
+    def _forward_actor(
+        self, batch: dict[str, Tensor]
+    ) -> tuple[Tensor, dict[str, float]]:
+        if AWR_WEIGHT not in batch:
+            raise KeyError(f"Actor training requires fixed {AWR_WEIGHT!r}")
+        batch = self._prepare_images(batch)
         self._camera_tokens.clear()
         actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)
-        value = self._value(batch)
 
         abs_error = F.l1_loss(batch[ACTION], actions_hat, reduction="none")
         valid = (~batch["action_is_pad"]).unsqueeze(-1)
@@ -109,50 +179,32 @@ class HephaActAWRPolicy(ACTPolicy):
             ).sum(-1)
             actor_per_sample = actor_per_sample + self.config.kl_weight * kld_per_sample
 
-        return_target = batch[AWR_RETURN].float().reshape(-1)
-        if return_target.shape != value.shape:
+        weights = batch[AWR_WEIGHT].float().reshape(-1)
+        if weights.shape != actor_per_sample.shape:
             raise ValueError(
-                f"AWR return shape {tuple(return_target.shape)} does not match "
-                f"value shape {tuple(value.shape)}"
+                f"AWR weight shape {tuple(weights.shape)} does not match actor loss "
+                f"shape {tuple(actor_per_sample.shape)}"
             )
-        advantage = return_target - value.detach()
-        weight_advantage = advantage
-        if self.config.awr_normalize_advantage and advantage.numel() > 1:
-            weight_advantage = (advantage - advantage.mean()) / advantage.std(
-                unbiased=False
-            ).clamp_min(1e-6)
-        weights = torch.exp(weight_advantage / self.config.awr_beta).clamp(
-            max=self.config.awr_max_weight
-        )
-        weights = weights / weights.mean().clamp_min(1e-6)
-
         actor_loss = (weights * actor_per_sample).mean()
-        value_loss = F.mse_loss(value, return_target)
-        loss = actor_loss + self.config.value_loss_weight * value_loss
         metrics = {
             "actor_loss": actor_loss.item(),
-            "value_loss": value_loss.item(),
-            "value_mean": value.mean().item(),
-            "return_mean": return_target.mean().item(),
-            "advantage_mean": advantage.mean().item(),
             "awr_weight_mean": weights.mean().item(),
             "awr_weight_max": weights.max().item(),
             "l1_loss": (
                 (abs_error * valid).sum() / valid.sum().mul(abs_error.shape[-1]).clamp_min(1)
             ).item(),
         }
+        if AWR_ADVANTAGE in batch:
+            metrics["advantage_mean"] = (
+                batch[AWR_ADVANTAGE].float().mean().item()
+            )
         if self.config.use_vae:
             metrics["kld_loss"] = kld_per_sample.mean().item()
         if not self.training:
-            accumulate_awr_eval_metrics(metrics, return_target.shape[0])
-        return loss, metrics
+            accumulate_awr_eval_metrics(metrics, weights.shape[0])
+        return actor_loss, metrics
 
     @torch.no_grad()
     def predict_value(self, batch: dict[str, Tensor]) -> Tensor:
-        """Return V(s) without changing ACT's action queue."""
-        if self.config.image_features:
-            batch = dict(batch)
-            batch[OBS_IMAGES] = [batch[key] for key in self.config.image_features]
-        self._camera_tokens.clear()
-        self.model(batch)
-        return self._value(batch)
+        """Return V(s) without running or changing ACT's action queue."""
+        return self._encode_value(batch)

@@ -4,16 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-_METRIC_NAMES = (
-    "actor_loss",
-    "value_loss",
-    "value_mean",
-    "return_mean",
-    "advantage_mean",
-    "awr_weight_mean",
-    "awr_weight_max",
-)
-
 
 @dataclass
 class _Accumulator:
@@ -27,10 +17,12 @@ class _Accumulator:
         self.maximum_weight = 0.0
 
     def update(self, metrics: dict[str, float], batch_size: int) -> None:
-        for name in _METRIC_NAMES[:-1]:
-            self.sums[name] = self.sums.get(name, 0.0) + metrics[name] * batch_size
+        for name, value in metrics.items():
+            if name == "awr_weight_max":
+                self.maximum_weight = max(self.maximum_weight, value)
+                continue
+            self.sums[name] = self.sums.get(name, 0.0) + value * batch_size
         self.samples += batch_size
-        self.maximum_weight = max(self.maximum_weight, metrics["awr_weight_max"])
 
     def consume(self) -> dict[str, float]:
         if self.samples == 0:
@@ -38,7 +30,8 @@ class _Accumulator:
         result = {
             name: total / self.samples for name, total in self.sums.items()
         }
-        result["awr_weight_max"] = self.maximum_weight
+        if self.maximum_weight:
+            result["awr_weight_max"] = self.maximum_weight
         self.reset()
         return result
 

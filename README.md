@@ -300,10 +300,16 @@ C --> D
 ## ACT advantage-weighted regression (AWR)
 
 Hepha keeps upstream LeRobot ACT as the actor and provides a separate
-`hepha_act_awr` extension. The extension shares ACT's projected camera, robot-state,
-and requested-drawer features with a small scalar value head. ACT's action decoder
-and action-chunk output are unchanged. Training minimizes the advantage-weighted
-ACT objective plus value regression to discounted rollout returns.
+`hepha_act_awr` extension. It follows ordered AWR policy iteration: collect
+trajectories, fit the value head, freeze it and materialize advantages, fit ACT
+with those immutable weights, collect new trajectories, merge them into the replay
+dataset, and repeat. Value and actor regression never run in the same optimizer step.
+
+For each replay transition, Hepha computes the Monte-Carlo target
+`G_t = r_t + gamma * G_(t+1)`, then `A_t = G_t - V(s_t)`. Advantages are
+standardized once over the replay dataset and converted to fixed weights
+`min(exp(normalized_A_t / beta), awr_max_weight)`. ACT minimizes its usual per-sample
+L1-plus-KL loss multiplied by that weight; transitions are still sampled uniformly.
 
 Install the updated local entry points after pulling the repository:
 
@@ -354,10 +360,11 @@ randomly initializes only the new value head:
 ```bash
 .venv/bin/hepha-awr-init \
   models/hepha_act_200 \
-  models/hepha_act_awr_init
+  models/hepha_act_awr_init \
+  --overwrite
 ```
 
-Then train on a CUDA machine with the official LeRobot trainer:
+Fit only the value head. ACT parameters and BatchNorm buffers remain frozen:
 
 ```bash
 .venv/bin/hepha-train \
@@ -365,27 +372,103 @@ Then train on a CUDA machine with the official LeRobot trainer:
   --root datasets/hepha_act_awr_rollouts \
   --policy-type hepha_act_awr \
   --policy-path models/hepha_act_awr_init \
-  --output-dir outputs/hepha_act_awr \
-  --job-name hepha_act_awr \
+  --output-dir outputs/hepha_act_awr_value_i0 \
+  --job-name hepha_act_awr_value_i0 \
+  --device cuda \
+  --steps 20000 \
+  --batch-size 8 \
+  --num-workers 4 \
+  --wandb \
+  -- \
+  --dataset.eval_split=0.1 \
+  --eval_steps=2000 \
+  --policy.awr_stage=value \
+  --policy.awr_discount=0.999 \
+  --policy.awr_beta=1.0 \
+  --policy.awr_max_weight=20 \
+  --policy.value_optimizer_lr=0.0001 \
+  --wandb.project=hepha
+```
+
+Freeze that checkpoint and calculate one immutable advantage and weight per replay
+frame:
+
+```bash
+.venv/bin/hepha-awr-advantages \
+  outputs/hepha_act_awr_value_i0/checkpoints/last/pretrained_model \
+  --repo-id tmeynier/hepha_act_awr_rollouts \
+  --root datasets/hepha_act_awr_rollouts \
+  --output awr/iteration-000/advantages.parquet \
+  --device cuda \
+  --batch-size 32 \
+  --num-workers 4 \
+  --overwrite
+```
+
+Fit only ACT using the fixed weights. The value head remains frozen:
+
+```bash
+.venv/bin/hepha-train \
+  --repo-id tmeynier/hepha_act_awr_rollouts \
+  --root datasets/hepha_act_awr_rollouts \
+  --policy-type hepha_act_awr \
+  --policy-path outputs/hepha_act_awr_value_i0/checkpoints/last/pretrained_model \
+  --output-dir outputs/hepha_act_awr_actor_i0 \
+  --job-name hepha_act_awr_actor_i0 \
   --device cuda \
   --steps 100000 \
   --batch-size 8 \
   --num-workers 4 \
   --wandb \
-  --policy-repo-id tmeynier/hepha_act_awr \
+  --policy-repo-id tmeynier/hepha_act_awr_i0 \
   -- \
   --dataset.eval_split=0.1 \
   --eval_steps=10000 \
-  --policy.awr_discount=0.999 \
-  --policy.awr_beta=1.0 \
-  --policy.awr_max_weight=20 \
-  --policy.value_loss_weight=0.5 \
+  --policy.awr_stage=actor \
+  --policy.awr_advantage_path=awr/iteration-000/advantages.parquet \
   --wandb.project=hepha
 ```
 
-In addition to LeRobot's loss and timing plots, W&B receives `actor_loss`,
-`value_loss`, `value_mean`, `return_mean`, `advantage_mean`, `awr_weight_mean`,
-and `awr_weight_max` from both training and held-out evaluation.
+For the next iteration, collect fresh trajectories from the updated actor:
+
+```bash
+.venv/bin/hepha-awr-record \
+  outputs/hepha_act_awr_actor_i0/checkpoints/last/pretrained_model \
+  --repo-id tmeynier/hepha_act_awr_rollouts_i1 \
+  --root datasets/hepha_act_awr_rollouts_i1 \
+  --episodes 100 \
+  --episode-seconds 100 \
+  --seed-start 40000 \
+  --device mps \
+  --n-action-steps 1 \
+  --temporal-ensemble-coeff 0.01 \
+  --domain-randomization-scale 0 \
+  --push-to-hub \
+  --overwrite
+```
+
+Append them to a new cumulative replay dataset; the two inputs remain unchanged:
+
+```bash
+.venv/bin/hepha-awr-merge \
+  --replay-repo-id tmeynier/hepha_act_awr_rollouts \
+  --replay-root datasets/hepha_act_awr_rollouts \
+  --new-repo-id tmeynier/hepha_act_awr_rollouts_i1 \
+  --new-root datasets/hepha_act_awr_rollouts_i1 \
+  --repo-id tmeynier/hepha_act_awr_replay_i1 \
+  --root datasets/hepha_act_awr_replay_i1 \
+  --push-to-hub \
+  --overwrite
+```
+
+Run the same value, advantage, and actor stages using the iteration-1 actor as
+`--policy-path`, the merged replay dataset, and new output paths. Every iteration
+recomputes all returns and advantages; an old advantage file cannot silently be
+used with a different replay repository.
+
+W&B value runs report `value_loss`, `value_mean`, `return_mean`, and
+`value_error_mean`. Actor runs report `actor_loss`, `advantage_mean`,
+`awr_weight_mean`, and `awr_weight_max` for training and held-out evaluation.
 
 All three sources of data are generally used together to build a strong base 
 policy.
