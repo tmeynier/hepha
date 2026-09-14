@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--yes",
         action="store_true",
-        help="Skip the safety confirmation prompt.",
+        help="Skip the safety pause.",
     )
     return parser.parse_args()
 
@@ -72,10 +72,7 @@ def main() -> int:
     print(f"New servo ID: {args.new_id}")
     print("WARNING: exactly ONE servo must be connected to the motor bus.")
     if not args.yes:
-        answer = input("Type YES to write the new ID: ")
-        if answer != "YES":
-            print("Cancelled; no settings were changed.")
-            return 1
+        input("Press ENTER to scan the bus and write the new ID: ")
 
     print("\nChecking how many servo IDs respond...")
     try:

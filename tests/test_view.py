@@ -115,10 +115,18 @@ def test_debug_controls_collisions_camera_axes_and_ik_targets() -> None:
             _geom_group(backend, "head_camera_marker_x")
             == CAMERA_FRAME_GEOM_GROUP
         )
-        assert _geom_group(backend, "cube_frame_marker_x") == HIDDEN_MARKER_GEOM_GROUP
+        assert _geom_group(backend, "cube_frame_marker_x") == IK_TARGET_GEOM_GROUP
         assert _geom_group(backend, "hand_tip_marker_x") == IK_TARGET_GEOM_GROUP
         assert (
             _geom_group(backend, "drawer_target_marker_x")
+            == IK_TARGET_GEOM_GROUP
+        )
+        assert (
+            _geom_group(backend, "active_ik_source_marker_x")
+            == IK_TARGET_GEOM_GROUP
+        )
+        assert (
+            _geom_group(backend, "active_ik_target_marker_x")
             == IK_TARGET_GEOM_GROUP
         )
 

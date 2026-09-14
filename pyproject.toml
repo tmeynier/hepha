@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "LeRobot integration and MuJoCo simulation pipeline for the Hepha robot"
 requires-python = ">=3.12"
 dependencies = [
-    "lerobot[core_scripts,training]==0.6.1",
+    "lerobot[core_scripts,feetech,training]==0.6.1",
     "mujoco>=3.3,<4",
     "numpy>=2.0,<2.3",
     "scipy>=1.14,<2",
@@ -23,12 +23,18 @@ dev = [
 [project.scripts]
 hepha-view = "simulation.view:main"
 hepha-record = "hepha_lerobot.recording.record:main"
+hepha-teleop-record = "hepha_lerobot.recording.teleop:main"
+hepha-follower-calibrate = "hardware.calibrate_feetech_follower:main"
+hepha-follow = "hardware.teleoperate_feetech:main"
+hepha-teleop-episode = "hardware.teleoperate_episode:main"
+hepha-cnc = "hardware.control_fmc4030:main"
 hepha-policies = "hepha_lerobot.policies.catalog:main"
 hepha-train = "hepha_lerobot.training.train:main"
 hepha-evaluate = "hepha_lerobot.evaluation.rollout:main"
 hepha-eval-loss = "hepha_lerobot.evaluation.offline_loss:main"
 hepha-eval-grasp = "hepha_lerobot.evaluation.grasp_sweep:main"
 hepha-eval-task = "hepha_lerobot.evaluation.task_sweep:main"
+hepha-eval-ik = "hepha_lerobot.evaluation.ik_sweep:main"
 hepha-dagger-mark = "hepha_lerobot.dagger.mark:main"
 hepha-dagger-correct = "hepha_lerobot.dagger.correct:main"
 hepha-dagger-merge = "hepha_lerobot.dagger.merge:main"
@@ -38,7 +44,7 @@ hepha-awr-advantages = "hepha_lerobot.awr.advantages:main"
 hepha-awr-merge = "hepha_lerobot.awr.merge:main"
 
 [tool.setuptools]
-package-dir = {"" = "lerobot", "hepha_lerobot" = "lerobot", "simulation" = "simulation"}
+package-dir = {"" = "lerobot", "hepha_lerobot" = "lerobot", "simulation" = "simulation", "hardware" = "hardware"}
 py-modules = ["lerobot_robot_hepha"]
 packages = [
     "hepha_lerobot",
@@ -51,6 +57,7 @@ packages = [
     "hepha_lerobot.policies.hepha_act_awr",
     "hepha_lerobot.recording",
     "hepha_lerobot.training",
+    "hardware",
     "simulation",
     "simulation.backends",
     "simulation.backends.mujoco",

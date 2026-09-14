@@ -40,10 +40,13 @@ IK_TARGET_GEOM_GROUP = 3
 HIDDEN_MARKER_GEOM_GROUP = 5
 
 IK_TARGET_MARKER_PREFIXES = (
+    "cube_frame_marker_",
     "hand_tip_marker_",
     "drawer_target_marker_",
     "above_drawer_target_marker_",
     "drawer_close_target_marker_",
+    "active_ik_source_marker_",
+    "active_ik_target_marker_",
 )
 
 STORAGE_TRANSLATION_NOISE_M = 0.030
@@ -229,7 +232,8 @@ class MujocoBackend(SimulationBackend):
     def home_action(self) -> np.ndarray:
         home = 0.5 * (self.control_low + self.control_high)
         for finger in ("finger_l", "finger_r"):
-            home[ACTUATOR_NAMES.index(finger)] = 1.0
+            index = ACTUATOR_NAMES.index(finger)
+            home[index] = self.control_high[index]
         return home
 
     def reset(self, *, seed: int | None = None) -> None:

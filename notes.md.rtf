@@ -1,0 +1,128 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2821
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\froman\fcharset0 Times-Italic;\f2\froman\fcharset0 Times-Roman;
+\f3\froman\fcharset0 Times-Bold;\f4\fnil\fcharset0 STIXTwoMath-Regular;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 - robot calibration\
+- new simulation setup for IK: start, reach drawer pos, reach cube pos, reach drawer pos, start\
+- drawer wood build finished\
+\
+\
+\
+- KV caching is important\
+- not loose information from the VLM by trying \
+- 
+\f1\i \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 the lightweight Action Head is optimized to master physical dynamics.\
+- being fast (also for failure detection) is a major challenge\
+- failures in dataset are as important as successes\
+- failure detection = prevent hallucination\
+- 
+\f2\i0 \strokec2 The first H\uc0\u8242  (H\u8242  \u8804  H) actions in At are executed, and then the VLA replans a new action sequence At+H\u8242  at time t + H\u8242 \
+- System 2 enables to make the architecture non markovian\
+\
+\
+\
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 Feature-wise Linear Modulation\
+\
+\
+Use Coin-Flip Network (CFN) from VLAConf\
+Use functional conformal prediction in System 2 as in SAFE\
+\
+\
+Standard DAgger addresses 
+\f3\b \strokec2 covariate shift
+\f2\b0 \strokec2  in behavior cloning.\
+\
+It tries to teach the policy to behave correctly 
+\f3\b \strokec2 from the distribution of states its policy actually visits
+\f2\b0 \strokec2 .\
+Instead, RaC = pull back\
+\pard\pardeftab720\sa240\partightenfactor0
+\cf0 \strokec2 That is especially useful for 
+\f3\b contact-rich manipulation
+\f2\b0 , where continuing from an error state may be harder than backing out and trying again.\
+\
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 VLAConf\'a0=\'a0WHEN\'a0am\'a0I\'a0going\'a0wrong?
+\f4 \strokec2 \
+RaC\'a0=\'a0WHAT\'a0behavior\'a0should\'a0I\'a0learn\'a0to\'a0recover?\
+\pard\pardeftab720\partightenfactor0
+
+\f2 \cf0 \\boxed\{\\text\{RaC = WHAT behavior should I learn to recover?\}\}\
+\pard\pardeftab720\sa240\partightenfactor0
+\cf0 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\b \cf0 \strokec2 RaC relies on humans to recognize imminent failure and decide how far to rewind during data collection.
+\f2\b0 \strokec2  Your idea could potentially replace parts of that with a learned VLA confidence/value model: automatically detect the confidence collapse, identify the last high-confidence region, and let System 2 command a learned retry. That combination is more specific than simply applying DAgger.\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f3\b \cf0 \strokec2 Long multi-step reasoning
+\f2\b0  \'97 maintaining a coherent computation/planning process over many steps.\
+
+\f3\b Trial and error
+\f2\b0  \'97 exploring an approach and changing it when it doesn't work.\
+
+\f3\b Backtracking
+\f2\b0  \'97 returning to an earlier decision rather than blindly continuing.\
+
+\f3\b Self-correction / verification
+\f2\b0  \'97 checking intermediate or final results and revising them.\
+
+\f3\b Planning and decomposition
+\f2\b0  \'97 breaking a difficult problem into manageable subproblems.\
+
+\f3\b Long-context problem solving
+\f2\b0  \'97 keeping relevant intermediate state across a much longer trajectory.\
+
+\f3\b Tool/code use
+\f2\b0 , in some training setups \'97 writing code, observing results, debugging, or otherwise interacting with an environment.\
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 \
+\pard\pardeftab720\sa240\partightenfactor0
+\cf0 \strokec2 It's analogous to test-time scaling in reasoning models:\
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 LLM:\'a0more\'a0reasoning/attempts\uc0\u8594 better\'a0answer\
+\pard\pardeftab720\sa240\partightenfactor0
+\cf0 \strokec2 while RaC gets:\
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 Robot:\'a0more\'a0recovery/retry\'a0opportunities\uc0\u8594 higher\'a0task\'a0success.\
+\pard\pardeftab720\sa240\partightenfactor0
+\cf0 \strokec2 Crucially, 
+\f3\b the model weights don't change
+\f2\b0 :\
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 RaC treats recovery as yet another \'93skill\'94 to learn from human demonstrations\
+\
+\pard\pardeftab720\sa240\partightenfactor0
+\cf0 \strokec2 FLARE's central insight is that there are actually 
+\f3\b two fundamentally different kinds of failure
+\f2\b0 , requiring two different solutions:\
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 Retry\'a0for\'a0recoverable\'a0errors +Reset\'a0for\'a0catastrophic\'a0errors\
+\
+\
+Conclusion:\
+\
+- First do a normal pipeline with ACT\
+- \
+\
+\
+\
+\pard\pardeftab720\sa240\partightenfactor0
+\cf0 \strokec2 vider la corbeille + one full correct sequence + ask how to resell on amazon and galaxus +\
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 \
+\
+\
+\
+\
+\
+\
+}

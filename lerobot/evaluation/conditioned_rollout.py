@@ -14,9 +14,11 @@ from hepha_lerobot.conditioning import (
     drawer_condition,
     drawer_task,
     task_phase_condition,
+    workspace_condition,
 )
 from hepha_lerobot.evaluation.phase_control import PhaseTransitionState
 from hepha_lerobot.training.train import resolve_device
+from hepha_lerobot.workspaces import CNC_ACTION_NAMES, workspace_for_phase
 from lerobot.configs import PreTrainedConfig
 from lerobot.policies.utils import prepare_observation_for_inference
 from lerobot.utils.constants import OBS_ENV_STATE, OBS_IMAGES, OBS_STATE
@@ -30,7 +32,9 @@ from lerobot.utils.visualization_utils import (
 from lerobot.policies import get_policy_class, make_pre_post_processors
 from simulation import SimulationConfig, create_backend
 from simulation.backends.mujoco import MujocoBackend
+from simulation.backends.mujoco.backend import ACTUATOR_NAMES
 from simulation.backends.mujoco.episode import initialize_task_episode
+from simulation.backends.mujoco.workspaces import resolve_mujoco_workspace
 from simulation.base import parse_backend_options
 from simulation.view import _parse_bool
 
@@ -72,9 +76,7 @@ def _apply_inference_overrides(
         if n_action_steps <= 0:
             raise ValueError("--n-action-steps must be positive")
         if not hasattr(policy_config, "n_action_steps"):
-            raise ValueError(
-                f"Policy {policy_config.type!r} does not support --n-action-steps"
-            )
+            raise ValueError(f"Policy {policy_config.type!r} does not support --n-action-steps")
         chunk_size = getattr(policy_config, "chunk_size", None)
         if chunk_size is not None and n_action_steps > chunk_size:
             raise ValueError(
@@ -90,9 +92,7 @@ def _apply_inference_overrides(
     if policy_config.type not in {"act", "hepha_act_phase", "hepha_act_awr"} or not hasattr(
         policy_config, "temporal_ensemble_coeff"
     ):
-        raise ValueError(
-            "--temporal-ensemble-coeff is only supported for ACT-derived policies"
-        )
+        raise ValueError("--temporal-ensemble-coeff is only supported for ACT-derived policies")
     effective_action_steps = getattr(policy_config, "n_action_steps", None)
     if effective_action_steps != 1:
         raise ValueError("Temporal ensembling requires --n-action-steps 1")
@@ -139,12 +139,14 @@ def _policy_observation(
     environment_state = drawer_condition(drawer_index)
     if current_phase is not None:
         environment_state = np.concatenate(
-            [environment_state, task_phase_condition(current_phase)]
+            [
+                environment_state,
+                workspace_condition(workspace_for_phase(current_phase)),
+                task_phase_condition(current_phase),
+            ]
         ).astype(np.float32, copy=False)
     return {
-        OBS_STATE: np.asarray(
-            [raw_observation[name] for name in state_names], dtype=np.float32
-        ),
+        OBS_STATE: np.asarray([raw_observation[name] for name in state_names], dtype=np.float32),
         OBS_ENV_STATE: environment_state,
         f"{OBS_IMAGES}.{camera}": np.asarray(raw_observation[camera]),
     }
@@ -170,7 +172,7 @@ def run(args: argparse.Namespace) -> None:
     phase_state = PhaseTransitionState() if phase_aware else None
     if phase_aware:
         environment_shape = policy_config.input_features[OBS_ENV_STATE].shape
-        expected_shape = (9 + TASK_PHASE_COUNT,)
+        expected_shape = (9 + 2 + TASK_PHASE_COUNT,)
         if environment_shape != expected_shape:
             raise ValueError(
                 f"Phase-aware policy expects {OBS_ENV_STATE} shape {environment_shape}; "
@@ -182,8 +184,7 @@ def run(args: argparse.Namespace) -> None:
                 "phase predictions are refreshed every frame"
             )
         print(
-            "Phase control: initial phase=1, transition=2-of-3 votes for "
-            "current_phase+1",
+            "Phase control: initial phase=1, transition=2-of-3 votes for current_phase+1",
             flush=True,
         )
     if hasattr(policy_config, "n_action_steps"):
@@ -223,7 +224,12 @@ def run(args: argparse.Namespace) -> None:
                 for name, feature_type in backend.observation_features.items()
                 if feature_type is float
             )
-            action_names = tuple(backend.action_features)
+            backend_action_names = tuple(backend.action_features)
+            policy_action_names = (
+                tuple(name for name in backend_action_names if name not in CNC_ACTION_NAMES)
+                if phase_aware and isinstance(backend, MujocoBackend)
+                else backend_action_names
+            )
             policy.reset()
             preprocessor.reset()
             postprocessor.reset()
@@ -238,9 +244,7 @@ def run(args: argparse.Namespace) -> None:
                     state_names=state_names,
                     camera=args.camera,
                     drawer_index=args.drawer_index,
-                    current_phase=(
-                        phase_state.current_phase if phase_state is not None else None
-                    ),
+                    current_phase=(phase_state.current_phase if phase_state is not None else None),
                 )
                 batch = prepare_observation_for_inference(
                     observation,
@@ -264,17 +268,37 @@ def run(args: argparse.Namespace) -> None:
                         action = policy.select_action(batch)
                     action = postprocessor(action)
                 values = action.squeeze(0).detach().cpu().numpy()
-                if values.shape != (len(action_names),):
+                if values.shape != (len(policy_action_names),):
                     raise ValueError(
                         f"Policy returned action shape {values.shape}; expected "
-                        f"({len(action_names)},)"
+                        f"({len(policy_action_names)},)"
                     )
-                action_dict = dict(zip(action_names, values.tolist(), strict=True))
+                if phase_state is not None and isinstance(backend, MujocoBackend):
+                    full_values = backend.data.ctrl[backend.actuator_ids].astype(
+                        float, copy=True
+                    )
+                    for name, value in zip(policy_action_names, values, strict=True):
+                        full_values[ACTUATOR_NAMES.index(name)] = value
+                    workspace = workspace_for_phase(phase_state.current_phase)
+                    cnc_targets = resolve_mujoco_workspace(
+                        backend.model,
+                        workspace,
+                        drawer=args.drawer_index if workspace.value == "B" else None,
+                    )
+                    for joint_name, value in cnc_targets.items():
+                        actuator_name = {
+                            "base_link_base_cnc_x_joint": "cnc_x",
+                            "cnc_x_link_cnc_x_cnc_y_joint": "cnc_y",
+                            "cnc_y_link_cnc_y_head_joint": "head_z",
+                        }[joint_name]
+                        full_values[ACTUATOR_NAMES.index(actuator_name)] = value
+                    values = full_values
+                action_dict = dict(
+                    zip(backend_action_names, values.tolist(), strict=True)
+                )
                 backend.send_action(action_dict)
                 if visualizing:
-                    log_visualization_data(
-                        "rerun", observation=raw_observation, action=action_dict
-                    )
+                    log_visualization_data("rerun", observation=raw_observation, action=action_dict)
                 remaining = control_interval - (time.perf_counter() - started)
                 if remaining > 0:
                     time.sleep(remaining)

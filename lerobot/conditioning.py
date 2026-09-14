@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import numpy as np
+from hepha_lerobot.workspaces import DRAWER_COUNT, TaskPhase, Workspace
 from lerobot.utils.constants import OBS_ENV_STATE
 
-DRAWER_COUNT = 9
 DRAWER_CONDITION_NAMES = tuple(
     f"requested_drawer_{drawer_index}" for drawer_index in range(1, DRAWER_COUNT + 1)
 )
-TASK_PHASE_COUNT = 5
+WORKSPACE_CONDITION_NAMES = ("workspace_A", "workspace_B")
+TASK_PHASE_COUNT = len(TaskPhase)
 TASK_PHASE_CONDITION_NAMES = tuple(
     f"current_task_phase_{phase}" for phase in range(1, TASK_PHASE_COUNT + 1)
 )
@@ -25,9 +26,7 @@ def validate_drawer_index(drawer_index: int) -> int:
 
     drawer_index = int(drawer_index)
     if not 1 <= drawer_index <= DRAWER_COUNT:
-        raise ValueError(
-            f"Drawer index must be between 1 and {DRAWER_COUNT}, got {drawer_index}"
-        )
+        raise ValueError(f"Drawer index must be between 1 and {DRAWER_COUNT}, got {drawer_index}")
     return drawer_index
 
 
@@ -57,9 +56,7 @@ def validate_task_phase(task_phase: int) -> int:
 
     task_phase = int(task_phase)
     if not 1 <= task_phase <= TASK_PHASE_COUNT:
-        raise ValueError(
-            f"Task phase must be between 1 and {TASK_PHASE_COUNT}, got {task_phase}"
-        )
+        raise ValueError(f"Task phase must be between 1 and {TASK_PHASE_COUNT}, got {task_phase}")
     return task_phase
 
 
@@ -84,6 +81,21 @@ def task_phase_condition_values(task_phase: int) -> dict[str, float]:
     )
 
 
+def workspace_condition(workspace: Workspace | str) -> np.ndarray:
+    """Encode the active discrete CNC workspace as A/B one-hot state."""
+    workspace = Workspace(workspace)
+    return np.asarray(
+        [workspace is Workspace.STORAGE, workspace is Workspace.DRAWERS],
+        dtype=np.float32,
+    )
+
+
+def workspace_condition_values(workspace: Workspace | str) -> dict[str, float]:
+    return dict(
+        zip(WORKSPACE_CONDITION_NAMES, workspace_condition(workspace).tolist(), strict=True)
+    )
+
+
 def drawer_condition_feature() -> dict[str, dict[str, object]]:
     """Return the native LeRobot environment-state dataset feature."""
 
@@ -104,6 +116,16 @@ def task_phase_condition_feature() -> dict[str, dict[str, object]]:
             "dtype": "float32",
             "shape": (TASK_PHASE_COUNT,),
             "names": list(TASK_PHASE_CONDITION_NAMES),
+        }
+    }
+
+
+def workspace_condition_feature() -> dict[str, dict[str, object]]:
+    return {
+        OBS_ENV_STATE: {
+            "dtype": "float32",
+            "shape": (len(WORKSPACE_CONDITION_NAMES),),
+            "names": list(WORKSPACE_CONDITION_NAMES),
         }
     }
 

@@ -20,3 +20,9 @@ __pycache__/
 *.pt
 *.pth
 *.ckpt
+
+# Machine-specific hardware calibration
+/hardware/feetech_calibration.json
+/hardware/feetech_follower_calibration.json
+/hardware/fmc4030_positions.json
+/hardware/fmc4030_limit_calibration.json

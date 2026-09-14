@@ -10,9 +10,7 @@ from simulation import SimulationBackend
 
 ENTRY_POINT_GROUP = "hepha.demonstration_controllers"
 BUILTIN_CONTROLLERS = {
-    ("mujoco", "ik"): (
-        "simulation.backends.mujoco.ik:MujocoIKController"
-    ),
+    ("mujoco", "ik"): ("simulation.backends.mujoco.ik:MujocoIKController"),
 }
 
 
@@ -26,6 +24,9 @@ class DemonstrationController(Protocol):
 
     @property
     def recording_next_task_phase(self) -> int: ...
+
+    @property
+    def recording_workspace(self) -> str: ...
 
 
 def _load_path(path: str) -> Any:
@@ -43,9 +44,7 @@ def available_controllers(backend: str) -> tuple[str, ...]:
     builtins = {name for backend_name, name in BUILTIN_CONTROLLERS if backend_name == backend}
     prefix = f"{backend}."
     external = {
-        name.removeprefix(prefix)
-        for name in _external_controllers()
-        if name.startswith(prefix)
+        name.removeprefix(prefix) for name in _external_controllers() if name.startswith(prefix)
     }
     return tuple(sorted(builtins | external))
 
@@ -55,6 +54,9 @@ def create_controller(
     *,
     backend: SimulationBackend,
     seed: int,
+    early_failures: bool = True,
+    cube_grasp_lock: bool = False,
+    cube_drop_assist: bool = True,
 ) -> DemonstrationController:
     key = (backend.name, name)
     if key in BUILTIN_CONTROLLERS:
@@ -64,8 +66,16 @@ def create_controller(
         if external is None:
             choices = ", ".join(available_controllers(backend.name)) or "none installed"
             raise ValueError(
-                f"Unknown controller {name!r} for backend {backend.name!r}; "
-                f"available: {choices}"
+                f"Unknown controller {name!r} for backend {backend.name!r}; available: {choices}"
             )
         controller_class = external.load()
-    return controller_class(backend, seed=seed)
+    options = (
+        {
+            "early_failures": early_failures,
+            "cube_grasp_lock": cube_grasp_lock,
+            "cube_drop_assist": cube_drop_assist,
+        }
+        if key == ("mujoco", "ik")
+        else {}
+    )
+    return controller_class(backend, seed=seed, **options)

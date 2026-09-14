@@ -7,6 +7,8 @@ from hepha_lerobot.evaluation.conditioned_rollout import (
     _apply_inference_overrides,
     _policy_observation,
 )
+from hepha_lerobot.evaluation.ik_sweep import IKTaskResult
+from hepha_lerobot.evaluation.ik_sweep import parse_args as parse_ik_sweep_args
 from hepha_lerobot.evaluation.phase_control import PhaseTransitionState
 from hepha_lerobot.evaluation.rollout import (
     build_rollout_command,
@@ -14,7 +16,7 @@ from hepha_lerobot.evaluation.rollout import (
 from hepha_lerobot.evaluation.rollout import (
     parse_args as parse_rollout_args,
 )
-from hepha_lerobot.evaluation.task_sweep import TaskMilestones
+from hepha_lerobot.evaluation.task_metrics import TaskMilestones
 from hepha_lerobot.policies import available_policy_types
 from hepha_lerobot.recording.record import parse_args as parse_record_args
 from hepha_lerobot.training.train import build_train_command
@@ -145,10 +147,11 @@ def test_phase_policy_observation_appends_current_phase_one_hot() -> None:
     )
 
     environment_state = observation["observation.environment_state"]
-    assert environment_state.shape == (14,)
+    assert environment_state.shape == (16,)
     assert environment_state[3] == 1.0
-    assert environment_state[9 + 2] == 1.0
-    assert environment_state.sum() == 2.0
+    assert environment_state[9] == 1.0
+    assert environment_state[9 + 2 + 2] == 1.0
+    assert environment_state.sum() == 3.0
 
 
 def test_task_milestones_are_cumulative_and_close_only_after_insertion() -> None:
@@ -184,6 +187,60 @@ def test_task_milestones_are_cumulative_and_close_only_after_insertion() -> None
         cube_inside_drawer=True,
     )
     assert milestones.drawer_closed_after_insertion
+
+
+def test_ik_sweep_defaults_to_ten_uninterrupted_episodes() -> None:
+    args = parse_ik_sweep_args([])
+
+    assert args.episodes == 10
+    assert args.early_failures is False
+    assert args.cube_grasp_lock is False
+    assert args.cube_drop_assist is True
+    assert args.episode_seconds == 360.0
+
+
+def test_ik_sweep_accepts_optional_cube_grasp_lock() -> None:
+    assert parse_ik_sweep_args(["--cube-grasp-lock"]).cube_grasp_lock is True
+    assert (
+        parse_ik_sweep_args(["--cube-grasp-lock", "false"]).cube_grasp_lock
+        is False
+    )
+    assert (
+        parse_ik_sweep_args(["--cube-drop-assist", "false"]).cube_drop_assist
+        is False
+    )
+
+
+def test_ik_handoff_requirement_treats_unneeded_handoff_as_success() -> None:
+    common = {
+        "seed": 0,
+        "drawer_index": 5,
+        "cube_quadrant": "upper_left",
+        "drawer_opened": True,
+        "cube_grasped": True,
+        "cube_in_drawer": True,
+        "drawer_closed_after_insertion": True,
+        "final_cube_inside_drawer": True,
+        "final_drawer_closed": True,
+        "successful": True,
+        "completed": True,
+        "elapsed_steps": 1,
+        "status": "finished",
+    }
+
+    not_required = IKTaskResult(
+        **common,
+        handoff_required=False,
+        handoff_completed=False,
+    )
+    required_and_failed = IKTaskResult(
+        **common,
+        handoff_required=True,
+        handoff_completed=False,
+    )
+
+    assert not_required.handoff_requirement_satisfied
+    assert not required_and_failed.handoff_requirement_satisfied
 
 
 def test_rollout_options_after_policy_path_are_not_forwarded(monkeypatch) -> None:
@@ -238,3 +295,12 @@ def test_record_viewer_accepts_flag_or_explicit_boolean(monkeypatch) -> None:
 
     monkeypatch.setattr("sys.argv", ["hepha-record", "--debug", "true"])
     assert parse_record_args().debug is True
+
+    monkeypatch.setattr("sys.argv", ["hepha-record", "--early-failures", "false"])
+    assert parse_record_args().early_failures is False
+
+    monkeypatch.setattr("sys.argv", ["hepha-record", "--cube-grasp-lock"])
+    assert parse_record_args().cube_grasp_lock is True
+
+    monkeypatch.setattr("sys.argv", ["hepha-record", "--cube-drop-assist", "false"])
+    assert parse_record_args().cube_drop_assist is False

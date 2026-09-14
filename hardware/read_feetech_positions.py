@@ -4,13 +4,18 @@
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
 import time
 
-from scan_feetech_ids import find_candidate_ports
-
-
-STEPS_PER_REVOLUTION = 4096
+try:
+    from .axes import SERVO_LABELS
+    from .calibration import STEPS_PER_REVOLUTION
+    from .scan_feetech_ids import find_candidate_ports
+except ImportError:  # Direct execution: python hardware/read_feetech_positions.py
+    from axes import SERVO_LABELS
+    from calibration import STEPS_PER_REVOLUTION
+    from scan_feetech_ids import find_candidate_ports
 
 
 def positive_rate(value: str) -> float:
@@ -24,6 +29,13 @@ def servo_id(value: str) -> int:
     parsed = int(value)
     if not 1 <= parsed <= 252:
         raise argparse.ArgumentTypeError("servo IDs must be between 1 and 252")
+    return parsed
+
+
+def nonnegative_integer(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("retries cannot be negative")
     return parsed
 
 
@@ -47,7 +59,48 @@ def parse_args() -> argparse.Namespace:
         default=10.0,
         help="Reads per second (default: 10).",
     )
+    parser.add_argument(
+        "--retries",
+        type=nonnegative_integer,
+        default=2,
+        help="Retries after a failed serial read (default: 2).",
+    )
+    parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("table", "csv"),
+        default="table",
+        help="Terminal output format (default: table).",
+    )
     return parser.parse_args()
+
+
+def position_degrees(raw: int) -> float:
+    return raw * 360.0 / STEPS_PER_REVOLUTION
+
+
+def format_live_table(
+    *,
+    port: str,
+    baudrate: int,
+    elapsed: float,
+    ids: list[int],
+    raw_positions: dict[int, int],
+) -> str:
+    rows = [
+        "Feetech STS3215 bus monitor",
+        f"Port: {port}",
+        f"Baud: {baudrate:,}   Servos: {len(ids)}   Elapsed: {elapsed:8.1f} s",
+        "",
+        " ID  Robot element          Raw   Position",
+        "---  ------------------  ------  ---------",
+    ]
+    for motor_id in ids:
+        raw = raw_positions[motor_id]
+        label = SERVO_LABELS.get(motor_id, "unmapped servo")
+        rows.append(f"{motor_id:>3}  {label:<18}  {raw:>6}  {position_degrees(raw):>8.2f}°")
+    rows.extend(("", "Press Ctrl+C to stop. Use --format csv for logging."))
+    return "\n".join(rows)
 
 
 def scan_for_bus(bus_class: type, requested_port: str | None) -> tuple[str, int, list[int]]:
@@ -69,16 +122,15 @@ def scan_for_bus(bus_class: type, requested_port: str | None) -> tuple[str, int,
 
     if not matches:
         raise RuntimeError(
-            "No servos responded. Check 12 V power, USB, and the 3-pin bus cables."
+            "No servos responded. Check the correct external servo power supply, "
+            "USB, and the 3-pin bus cables."
         )
     if len(matches) > 1:
         descriptions = ", ".join(
-            f"{port} at {baudrate} baud (IDs {ids})"
-            for port, baudrate, ids in matches
+            f"{port} at {baudrate} baud (IDs {ids})" for port, baudrate, ids in matches
         )
         raise RuntimeError(
-            f"More than one responding motor bus was found: {descriptions}. "
-            "Select one with --port."
+            f"More than one responding motor bus was found: {descriptions}. Select one with --port."
         )
     return matches[0]
 
@@ -132,29 +184,42 @@ def main() -> int:
         bus.connect(handshake=False)
         bus.set_baudrate(baudrate)
         for motor_id in ids:
-            if bus.ping(motor_id) is None:
+            if bus.ping(motor_id, num_retry=args.retries) is None:
                 raise RuntimeError(f"Servo ID {motor_id} stopped responding.")
 
         print(f"Reading IDs {ids} on {port} at {baudrate} baud.")
-        print("Press Ctrl+C to stop.")
-        print("time_s," + ",".join(f"id_{motor_id}_raw,id_{motor_id}_deg" for motor_id in ids))
+        if args.output_format == "csv":
+            print("Press Ctrl+C to stop.")
+            print("time_s," + ",".join(f"id_{motor_id}_raw,id_{motor_id}_deg" for motor_id in ids))
 
         period = 1.0 / args.rate
         start = time.monotonic()
         next_read = start
         while True:
-            positions = bus.sync_read("Present_Position", normalize=False)
+            positions = bus.sync_read("Present_Position", normalize=False, num_retry=args.retries)
             elapsed = time.monotonic() - start
-            values = []
-            for motor_id in ids:
-                raw = int(positions[f"servo_{motor_id}"])
-                degrees = raw * 360.0 / STEPS_PER_REVOLUTION
-                values.extend((str(raw), f"{degrees:.3f}"))
-            print(f"{elapsed:.3f}," + ",".join(values), flush=True)
+            raw_positions = {motor_id: int(positions[f"servo_{motor_id}"]) for motor_id in ids}
+            if args.output_format == "table":
+                table = format_live_table(
+                    port=port,
+                    baudrate=baudrate,
+                    elapsed=elapsed,
+                    ids=ids,
+                    raw_positions=raw_positions,
+                )
+                print(f"\033[2J\033[H{table}", end="", flush=True)
+            else:
+                values = []
+                for motor_id in ids:
+                    raw = raw_positions[motor_id]
+                    values.extend((str(raw), f"{position_degrees(raw):.3f}"))
+                print(f"{elapsed:.3f}," + ",".join(values), flush=True)
 
             next_read += period
             time.sleep(max(0.0, next_read - time.monotonic()))
     except KeyboardInterrupt:
+        # Ignore repeated Ctrl+C presses while the serial port is being closed.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         print("\nStopped.")
     except Exception as exc:
         print(f"\nPosition reading failed: {exc}", file=sys.stderr)

@@ -54,6 +54,9 @@ class _WorkerConfig:
     deferred_rendering: bool
     viewer: bool
     debug: bool
+    early_failures: bool
+    cube_grasp_lock: bool
+    cube_drop_assist: bool
     backend_options: dict[str, Any]
     image_writer_processes: int
     image_writer_threads: int
@@ -80,6 +83,7 @@ class _DeferredFrame:
     action: dict[str, Any]
     current_task_phase: int
     next_task_phase: int
+    workspace: str
 
 
 @dataclass(frozen=True)
@@ -143,7 +147,46 @@ def parse_args() -> argparse.Namespace:
         default=False,
         type=_parse_bool,
         metavar="BOOL",
-        help="Show collisions, camera axes, and IK targets in the optional viewer",
+        help=(
+            "Show collisions, camera axes, persistent IK targets, and the live "
+            "IK source/target frame pair in the optional viewer"
+        ),
+    )
+    parser.add_argument(
+        "--early-failures",
+        nargs="?",
+        const=True,
+        default=True,
+        type=_parse_bool,
+        metavar="BOOL",
+        help=(
+            "Abort attempts immediately when task-quality checks fail (default: true); "
+            "CNC transit clearance always remains mandatory"
+        ),
+    )
+    parser.add_argument(
+        "--cube-grasp-lock",
+        nargs="?",
+        const=True,
+        default=False,
+        type=_parse_bool,
+        metavar="BOOL",
+        help=(
+            "Optionally weld a successfully approached cube to the grasping hand "
+            "during transport and release it before the drawer drop (default: false)"
+        ),
+    )
+    parser.add_argument(
+        "--cube-drop-assist",
+        nargs="?",
+        const=True,
+        default=True,
+        type=_parse_bool,
+        metavar="BOOL",
+        help=(
+            "Keep a released cube laterally inside its selected drawer and suppress "
+            "bounce while gravity lowers it (default: true)"
+        ),
     )
     parser.add_argument("--no-video", action="store_true")
     parser.add_argument(
@@ -214,11 +257,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         "--video-encoding-batch-size": args.video_encoding_batch_size,
         "--encoder-threads": args.encoder_threads,
     }
-    invalid = [
-        name
-        for name, value in positive_values.items()
-        if value is not None and value <= 0
-    ]
+    invalid = [name for name, value in positive_values.items() if value is not None and value <= 0]
     if invalid:
         raise ValueError(f"The following arguments must be positive: {', '.join(invalid)}")
     if args.max_attempts is not None and args.max_attempts <= 0:
@@ -298,6 +337,15 @@ def _recording_task_phases(controller: Any) -> tuple[int, int]:
     return validate_task_phase(current), validate_task_phase(next_phase)
 
 
+def _recording_workspace(controller: Any) -> str:
+    workspace = getattr(controller, "recording_workspace", None)
+    if workspace is None:
+        raise RuntimeError(
+            f"Controller {type(controller).__name__!r} must expose recording_workspace"
+        )
+    return str(workspace)
+
+
 def _record_worker(
     worker_id: int,
     config: _WorkerConfig,
@@ -334,12 +382,11 @@ def _record_worker(
                 video_encoding_batch_size=1,
                 streaming_encoding=config.streaming_encoding,
                 encoder_threads=config.encoder_threads,
+                include_workspace=True,
             )
             frames_per_attempt = max(2, round(config.episode_seconds * config.fps))
             capture_deferred = getattr(backend, "capture_deferred_observation", None)
-            materialize_deferred = getattr(
-                backend, "materialize_deferred_observation", None
-            )
+            materialize_deferred = getattr(backend, "materialize_deferred_observation", None)
             use_deferred_rendering = (
                 config.deferred_rendering
                 and not config.viewer
@@ -367,6 +414,9 @@ def _record_worker(
                         config.controller,
                         backend=backend,
                         seed=attempt_seed,
+                        early_failures=config.early_failures,
+                        cube_grasp_lock=config.cube_grasp_lock,
+                        cube_drop_assist=config.cube_drop_assist,
                     )
                     controller.reset(episode_seed=0)
                     drawer_index, cube_quadrant = _recording_metadata(controller)
@@ -394,9 +444,8 @@ def _record_worker(
                             render_state = None
                         action = backend.send_action(controller.action(progress))
                         expert_action = getattr(controller, "recording_action", action)
-                        current_task_phase, next_task_phase = _recording_task_phases(
-                            controller
-                        )
+                        current_task_phase, next_task_phase = _recording_task_phases(controller)
+                        workspace = _recording_workspace(controller)
                         if use_deferred_rendering:
                             deferred_frames.append(
                                 _DeferredFrame(
@@ -405,6 +454,7 @@ def _record_worker(
                                     action=expert_action,
                                     current_task_phase=current_task_phase,
                                     next_task_phase=next_task_phase,
+                                    workspace=workspace,
                                 )
                             )
                         else:
@@ -416,6 +466,7 @@ def _record_worker(
                                 drawer_index=drawer_index,
                                 current_task_phase=current_task_phase,
                                 next_task_phase=next_task_phase,
+                                workspace=workspace,
                             )
                         backend.step()
                         recorded_frames += 1
@@ -454,10 +505,9 @@ def _record_worker(
                                     action=deferred_frame.action,
                                     task=episode_task,
                                     drawer_index=drawer_index,
-                                    current_task_phase=(
-                                        deferred_frame.current_task_phase
-                                    ),
+                                    current_task_phase=(deferred_frame.current_task_phase),
                                     next_task_phase=deferred_frame.next_task_phase,
+                                    workspace=deferred_frame.workspace,
                                 )
                         dataset.save_episode()
                         worker_saved_episodes += 1
@@ -469,9 +519,7 @@ def _record_worker(
                     else:
                         if not use_deferred_rendering:
                             dataset.clear_episode_buffer()
-                        disposition = (
-                            "successful surplus attempt" if attempt_succeeded else status
-                        )
+                        disposition = "successful surplus attempt" if attempt_succeeded else status
                         print(
                             f"[worker {worker_id}] Discarded seed {attempt_seed}: "
                             f"{disposition} ({recorded_frames} frames)",
@@ -494,10 +542,7 @@ def _record_worker(
                 active_error = sys.exception()
                 try:
                     episode_buffer = getattr(dataset.writer, "episode_buffer", None)
-                    if (
-                        isinstance(episode_buffer, dict)
-                        and episode_buffer.get("size", 0) > 0
-                    ):
+                    if isinstance(episode_buffer, dict) and episode_buffer.get("size", 0) > 0:
                         dataset.clear_episode_buffer()
                     dataset.finalize()
                 except Exception:
@@ -584,10 +629,7 @@ def _merge_worker_datasets(
     )
     if not populated:
         return None
-    shards = [
-        LeRobotDataset(repo_id=result.repo_id, root=result.root)
-        for result in populated
-    ]
+    shards = [LeRobotDataset(repo_id=result.repo_id, root=result.root) for result in populated]
     return merge_datasets(
         shards,
         output_repo_id=repo_id,
@@ -631,6 +673,9 @@ def record_dataset(args: argparse.Namespace) -> Path:
         deferred_rendering=args.deferred_rendering,
         viewer=args.viewer,
         debug=args.debug and args.viewer,
+        early_failures=args.early_failures,
+        cube_grasp_lock=args.cube_grasp_lock,
+        cube_drop_assist=args.cube_drop_assist,
         backend_options=parse_backend_options(args.backend_option),
         image_writer_processes=args.image_writer_processes,
         image_writer_threads=args.image_writer_threads,
@@ -641,7 +686,9 @@ def record_dataset(args: argparse.Namespace) -> Path:
         f"Recording {args.episodes} successful episodes with {worker_count} "
         f"{'headless' if not args.viewer else 'interactive'} worker"
         f"{'s' if worker_count != 1 else ''}; deferred rendering="
-        f"{args.deferred_rendering and not args.viewer}"
+        f"{args.deferred_rendering and not args.viewer}; early failures="
+        f"{args.early_failures}; cube grasp lock={args.cube_grasp_lock}; "
+        f"cube drop assist={args.cube_drop_assist}"
     )
 
     context = multiprocessing.get_context("spawn")
@@ -684,9 +731,7 @@ def record_dataset(args: argparse.Namespace) -> Path:
                         worker_results.append(future.result())
 
         attempts = [
-            attempt
-            for worker_result in worker_results
-            for attempt in worker_result.attempts
+            attempt for worker_result in worker_results for attempt in worker_result.attempts
         ]
         _print_recording_summary(attempts)
         saved_count = sum(result.saved_episodes for result in worker_results)

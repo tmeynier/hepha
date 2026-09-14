@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import platform
 import sys
 
 
@@ -17,11 +18,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--port",
         help=(
-            "Optional serial port to scan (for example /dev/ttyACM0). "
+            "Optional serial port to scan (for example /dev/cu.usbmodem101). "
             "If omitted, all connected USB serial ports are detected and scanned."
         ),
     )
     return parser.parse_args()
+
+
+def _prefer_macos_callout_devices(devices: list[str]) -> list[str]:
+    """Prefer /dev/cu.* over the matching /dev/tty.* device on macOS.
+
+    Both names can refer to the same adapter.  The callout device does not wait
+    for carrier detect, so it is the appropriate one for an outgoing servo-bus
+    connection.
+    """
+    if platform.system() != "Darwin":
+        return sorted(set(devices))
+
+    device_set = set(devices)
+    for device in tuple(device_set):
+        if not device.startswith("/dev/tty."):
+            continue
+        callout_device = "/dev/cu." + device.removeprefix("/dev/tty.")
+        if callout_device in device_set:
+            device_set.remove(device)
+    return sorted(device_set)
 
 
 def find_candidate_ports() -> list[str]:
@@ -42,8 +63,10 @@ def find_candidate_ports() -> list[str]:
         if port.vid is not None
         or "usb" in port.device.lower()
         or "acm" in port.device.lower()
+        or "usb" in (port.description or "").lower()
+        or "usb" in (port.hwid or "").lower()
     ]
-    return sorted(set(usb_ports))
+    return _prefer_macos_callout_devices(usb_ports)
 
 
 def main() -> int:
@@ -87,7 +110,8 @@ def main() -> int:
     if not found:
         print(
             "\nNo servos responded on any detected port.\n"
-            "Check the 12 V power supply, USB connection, and 3-pin motor cable."
+            "Check the correct external servo power supply, USB connection, "
+            "and 3-pin motor cable."
         )
         return 1
 

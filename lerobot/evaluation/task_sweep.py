@@ -7,7 +7,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import mujoco
 import torch
 from hepha_lerobot.conditioning import drawer_task
 from hepha_lerobot.evaluation.conditioned_rollout import (
@@ -32,32 +31,11 @@ from simulation.backends.mujoco.ik import (
     _cube_center_inside_drawer,
 )
 
-DRAWER_OPEN_THRESHOLD_M = 0.040
-DRAWER_CLOSED_THRESHOLD_M = 0.005
-
-
-@dataclass
-class TaskMilestones:
-    drawer_opened: bool = False
-    cube_grasped: bool = False
-    cube_in_drawer: bool = False
-    drawer_closed_after_insertion: bool = False
-
-    def update(
-        self,
-        *,
-        drawer_opening_m: float,
-        stable_cube_grasp: bool,
-        cube_inside_drawer: bool,
-    ) -> None:
-        self.drawer_opened |= drawer_opening_m >= DRAWER_OPEN_THRESHOLD_M
-        self.cube_grasped |= stable_cube_grasp
-        self.cube_in_drawer |= cube_inside_drawer
-        self.drawer_closed_after_insertion |= (
-            self.drawer_opened
-            and self.cube_in_drawer
-            and drawer_opening_m <= DRAWER_CLOSED_THRESHOLD_M
-        )
+from .task_metrics import (
+    DRAWER_CLOSED_THRESHOLD_M,
+    TaskMilestones,
+    drawer_opening,
+)
 
 
 @dataclass(frozen=True)
@@ -106,20 +84,6 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise FileNotFoundError(f"Policy checkpoint not found: {args.policy_path}")
 
 
-def _drawer_opening(backend: MujocoBackend, drawer_index: int) -> float:
-    joint_name = f"base_link_base_drawer_{drawer_index}_joint"
-    joint_id = mujoco.mj_name2id(
-        backend.model, mujoco.mjtObj.mjOBJ_JOINT, joint_name
-    )
-    if joint_id < 0:
-        raise RuntimeError(f"MuJoCo joint not found: {joint_name}")
-    qpos_id = int(backend.model.jnt_qposadr[joint_id])
-    return max(
-        0.0,
-        float(backend.model.jnt_range[joint_id, 1] - backend.data.qpos[qpos_id]),
-    )
-
-
 def _run_episode(
     *,
     backend: MujocoBackend,
@@ -162,7 +126,7 @@ def _run_episode(
             lift >= CUBE_LIFT_CHECK_M and hand_distance <= CUBE_HAND_DISTANCE_M
         )
         stable_grasp_count = stable_grasp_count + 1 if physically_grasped else 0
-        opening = _drawer_opening(backend, drawer_index)
+        opening = drawer_opening(backend, drawer_index)
         inside = _cube_center_inside_drawer(
             backend.model, backend.data, drawer_index
         )
@@ -197,7 +161,7 @@ def _run_episode(
 
     # Advance the final command through physics before evaluating the terminal state.
     backend.step()
-    final_opening = _drawer_opening(backend, drawer_index)
+    final_opening = drawer_opening(backend, drawer_index)
     final_inside = _cube_center_inside_drawer(
         backend.model, backend.data, drawer_index
     )

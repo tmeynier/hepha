@@ -21,7 +21,7 @@ def _small_policy() -> HephaActPhasePolicy:
         device="cpu",
         input_features={
             OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(15,)),
-            OBS_ENV_STATE: PolicyFeature(type=FeatureType.ENV, shape=(14,)),
+            OBS_ENV_STATE: PolicyFeature(type=FeatureType.ENV, shape=(16,)),
         },
         output_features={
             ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(15,)),
@@ -41,10 +41,10 @@ def _small_policy() -> HephaActPhasePolicy:
 
 
 def _batch() -> dict[str, torch.Tensor]:
-    environment_state = torch.zeros(2, 14)
+    environment_state = torch.zeros(2, 16)
     environment_state[:, 0] = 1.0
-    environment_state[0, 9] = 1.0
-    environment_state[1, 10] = 1.0
+    environment_state[0, 11] = 1.0
+    environment_state[1, 12] = 1.0
     return {
         OBS_STATE: torch.zeros(2, 15),
         OBS_ENV_STATE: environment_state,
