@@ -100,7 +100,7 @@ def _apply_inference_overrides(
 
 
 def _load_policy(
-    policy_path: Path,
+    policy_path: str | Path,
     device: str,
     *,
     n_action_steps: int | None = None,

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import statistics
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from itertools import pairwise
@@ -43,164 +42,47 @@ def wrapped_encoder_delta(value: int, reference: int) -> int:
     return (value - reference + half_turn) % STEPS_PER_REVOLUTION - half_turn
 
 
-def _endpoint_slopes(
-    axis: AxisDefinition,
-    raw_min_delta: int,
-    raw_max_delta: int,
-) -> list[float]:
-    slopes = []
-    if axis.q_min != 0:
-        slopes.append(raw_min_delta / axis.q_min)
-    if axis.q_max != 0:
-        slopes.append(raw_max_delta / axis.q_max)
-    return slopes
-
-
-def resolve_endpoint_deltas(
-    axis: AxisDefinition,
-    *,
-    raw_min: int,
-    raw_home: int,
-    raw_max: int,
-) -> tuple[int, int]:
-    """Jointly unwrap endpoint deltas using their expected joint directions."""
-    shortest_min = wrapped_encoder_delta(raw_min, raw_home)
-    shortest_max = wrapped_encoder_delta(raw_max, raw_home)
-    if axis.q_min == 0 or axis.q_max == 0:
-        return shortest_min, shortest_max
-    if shortest_min == 0 and shortest_max == 0:
-        # Keep an all-identical capture at zero so validation can request a
-        # recapture. Scoring wrapped alternatives would otherwise divide by a
-        # zero mean scale or invent a full-revolution interval.
-        return 0, 0
-
-    candidates_min = tuple(
-        shortest_min + turn * STEPS_PER_REVOLUTION for turn in (-1, 0, 1)
-    )
-    candidates_max = tuple(
-        shortest_max + turn * STEPS_PER_REVOLUTION for turn in (-1, 0, 1)
-    )
-
-    def score(pair: tuple[int, int]) -> tuple[bool, bool, float, int]:
-        min_delta, max_delta = pair
-        slopes = _endpoint_slopes(axis, min_delta, max_delta)
-        same_direction = slopes[0] * slopes[1] > 0
-        fits_one_turn = abs(max_delta - min_delta) < STEPS_PER_REVOLUTION
-        magnitudes = [abs(slope) for slope in slopes]
-        mean_magnitude = statistics.mean(magnitudes)
-        scale_difference = (
-            abs(magnitudes[0] - magnitudes[1]) / mean_magnitude
-            if mean_magnitude > 0
-            else math.inf
-        )
-        return (
-            not fits_one_turn,
-            not same_direction,
-            scale_difference,
-            abs(min_delta) + abs(max_delta),
-        )
-
-    return min(
-        (
-            (min_delta, max_delta)
-            for min_delta in candidates_min
-            for max_delta in candidates_max
-        ),
-        key=score,
-    )
-
-
-def calibration_checks(
-    axis: AxisDefinition,
-    *,
-    raw_min: int,
-    raw_home: int,
-    raw_max: int,
-    spreads: dict[str, int],
-) -> tuple[list[str], list[str]]:
-    """Return blocking calibration problems and non-blocking advisories."""
-    raw_min_delta, raw_max_delta = resolve_endpoint_deltas(
-        axis,
-        raw_min=raw_min,
-        raw_home=raw_home,
-        raw_max=raw_max,
-    )
-    slopes = _endpoint_slopes(axis, raw_min_delta, raw_max_delta)
-    problems = []
-    advisories = []
-
-    if any(spread > 4 for spread in spreads.values()):
-        problems.append("an axis moved while samples were being captured")
-    if axis.q_min == 0 and abs(raw_min_delta) > 4:
-        problems.append("minimum and home represent q=0 but their readings differ")
-    if any(abs(slope) < 1 for slope in slopes):
-        problems.append("an endpoint is too close to home")
-    if len(slopes) == 2 and slopes[0] * slopes[1] <= 0:
-        problems.append("minimum and maximum are not on opposite sides of home")
-    if len(slopes) == 2:
-        magnitudes = [abs(slope) for slope in slopes]
-        mean_magnitude = statistics.mean(magnitudes)
-        relative_difference = (
-            abs(magnitudes[0] - magnitudes[1]) / mean_magnitude
-            if mean_magnitude > 0
-            else 0.0
-        )
-        if mean_magnitude > 0 and relative_difference > 0.15:
-            advisories.append("negative and positive encoder scales differ by more than 15%")
-    return problems, advisories
-
-
-def calibration_warnings(
-    axis: AxisDefinition,
-    *,
-    raw_min: int,
-    raw_home: int,
-    raw_max: int,
-    spreads: dict[str, int],
-) -> list[str]:
-    """Return all findings for callers that do not distinguish severity."""
-    problems, advisories = calibration_checks(
-        axis,
-        raw_min=raw_min,
-        raw_home=raw_home,
-        raw_max=raw_max,
-        spreads=spreads,
-    )
-    return problems + advisories
-
-
-def build_axis_calibration(
+def build_range_calibration(
     motor_id: int,
     axis: AxisDefinition,
     *,
-    raw_min: int,
-    raw_home: int,
-    raw_max: int,
-    spreads: dict[str, int],
+    encoder_low: int,
+    encoder_high: int,
+    sample_count: int,
 ) -> dict[str, object]:
-    raw_min_delta, raw_max_delta = resolve_endpoint_deltas(
-        axis,
-        raw_min=raw_min,
-        raw_home=raw_home,
-        raw_max=raw_max,
-    )
-    slopes = _endpoint_slopes(axis, raw_min_delta, raw_max_delta)
-    mean_steps_per_radian = statistics.mean(abs(slope) for slope in slopes)
-    direction = 1 if statistics.mean(slopes) > 0 else -1
+    """Build a calibration from continuously unwrapped sweep endpoints."""
 
+    direction = axis.encoder_direction
+    if direction not in (-1, 1):
+        raise ValueError("Encoder direction must be -1 or +1.")
+    if encoder_high <= encoder_low:
+        raise ValueError("Recorded encoder range must have positive width.")
+    span = encoder_high - encoder_low
+    if span >= STEPS_PER_REVOLUTION:
+        raise ValueError("Recorded encoder range spans a complete revolution.")
+
+    encoder_home = round((encoder_low + encoder_high) / 2)
+    if direction > 0:
+        encoder_at_q_min = encoder_low
+        encoder_at_q_max = encoder_high
+    else:
+        encoder_at_q_min = encoder_high
+        encoder_at_q_max = encoder_low
+    q_home = (axis.q_min + axis.q_max) / 2
     return {
         "servo_id": motor_id,
         **asdict(axis),
         "joint_name": axis.joint_name,
-        "q_home": 0.0,
-        "raw_min": raw_min,
-        "raw_home": raw_home,
-        "raw_max": raw_max,
-        "raw_min_delta": raw_min_delta,
-        "raw_max_delta": raw_max_delta,
+        "q_home": q_home,
+        "raw_min": encoder_at_q_min % STEPS_PER_REVOLUTION,
+        "raw_home": encoder_home % STEPS_PER_REVOLUTION,
+        "raw_max": encoder_at_q_max % STEPS_PER_REVOLUTION,
+        "raw_min_delta": encoder_at_q_min - encoder_home,
+        "raw_max_delta": encoder_at_q_max - encoder_home,
         "direction": direction,
-        "mean_steps_per_radian": mean_steps_per_radian,
-        "sample_spread": spreads,
+        "mean_steps_per_radian": span / (axis.q_max - axis.q_min),
+        "recorded_samples": sample_count,
+        "encoder_span": span,
     }
 
 

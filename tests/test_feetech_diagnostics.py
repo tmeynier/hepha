@@ -2,16 +2,17 @@ import math
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from hardware.calibrate_feetech_positions import (
-    AXES,
-    build_axis_calibration,
-    calibration_checks,
-    calibration_warnings,
+from hardware.axes import AXES
+from hardware.calibrate_feetech import (
+    ALL_SERVO_IDS,
+    RangeTracker,
+    build_complete_calibration,
+    resolve_complete_bus,
+)
+from hardware.calibration import (
+    build_range_calibration,
     load_calibration,
-    prepare_calibration,
     raw_to_mujoco_position,
-    resolve_calibration_bus,
-    resolve_endpoint_deltas,
     wrapped_encoder_delta,
 )
 from hardware.read_feetech_positions import format_live_table, scan_for_bus
@@ -63,67 +64,17 @@ def test_scan_for_bus_returns_the_only_responding_bus() -> None:
         )
 
 
-def test_explicit_port_and_ids_skip_exhaustive_scan() -> None:
-    probe = SimpleNamespace(is_connected=True)
-    probe.disconnect = lambda **_kwargs: setattr(probe, "is_connected", False)
-
-    with (
-        patch(
-            "hardware.calibrate_feetech_positions.create_feetech_bus",
-            return_value=probe,
-        ) as create_bus,
-        patch("hardware.calibrate_feetech_positions.connect_and_ping") as quick_ping,
-        patch("hardware.calibrate_feetech_positions.scan_for_bus") as exhaustive_scan,
-    ):
-        resolved = resolve_calibration_bus(
+def test_explicit_port_skips_exhaustive_scan() -> None:
+    with patch("hardware.calibrate_feetech.scan_for_bus") as exhaustive_scan:
+        resolved = resolve_complete_bus(
             object,
-            requested_port="/dev/cu.usbmodem101",
-            requested_ids=[3, 1, 3],
+            port="/dev/cu.usbmodem101",
             baudrate=1_000_000,
             retries=2,
         )
 
-    assert resolved == ("/dev/cu.usbmodem101", 1_000_000, [1, 3])
-    create_bus.assert_called_once_with("/dev/cu.usbmodem101", [1, 3])
-    quick_ping.assert_called_once_with(
-        probe,
-        baudrate=1_000_000,
-        motor_ids=[1, 3],
-        retries=2,
-    )
+    assert resolved == ("/dev/cu.usbmodem101", 1_000_000)
     exhaustive_scan.assert_not_called()
-    assert not probe.is_connected
-
-
-def test_failed_quick_ping_falls_back_to_exhaustive_scan() -> None:
-    probe = SimpleNamespace(is_connected=False)
-    probe.disconnect = lambda **_kwargs: None
-    discovered = ("/dev/cu.usbmodem101", 500_000, [1, 2, 3])
-
-    with (
-        patch(
-            "hardware.calibrate_feetech_positions.create_feetech_bus",
-            return_value=probe,
-        ),
-        patch(
-            "hardware.calibrate_feetech_positions.connect_and_ping",
-            side_effect=RuntimeError("ID 1 did not respond"),
-        ),
-        patch(
-            "hardware.calibrate_feetech_positions.scan_for_bus",
-            return_value=discovered,
-        ) as exhaustive_scan,
-    ):
-        resolved = resolve_calibration_bus(
-            object,
-            requested_port="/dev/cu.usbmodem101",
-            requested_ids=[1],
-            baudrate=1_000_000,
-            retries=2,
-        )
-
-    assert resolved == discovered
-    exhaustive_scan.assert_called_once_with(object, "/dev/cu.usbmodem101")
 
 
 def test_live_table_contains_robot_labels_and_positions() -> None:
@@ -177,169 +128,64 @@ def test_wrapped_encoder_delta_crosses_zero() -> None:
     assert wrapped_encoder_delta(4000, 100) == -196
 
 
-def test_axis_calibration_detects_direction_and_scale() -> None:
-    calibration = build_axis_calibration(
-        1,
-        AXES[1],
-        raw_min=1024,
-        raw_home=2048,
-        raw_max=3072,
-        spreads={"min": 1, "home": 0, "max": 1},
-    )
+def test_range_tracker_unwraps_crossing_zero_and_keeps_extrema() -> None:
+    tracker = RangeTracker()
+    for raw in (3900, 4050, 50, 300, 100, 4000, 3800):
+        tracker.observe(raw)
 
-    assert calibration["direction"] == 1
-    assert calibration["raw_min_delta"] == -1024
-    assert calibration["raw_max_delta"] == 1024
-    assert math.isclose(calibration["mean_steps_per_radian"], 2048 / math.pi)
+    assert tracker.samples == 7
+    assert tracker.minimum == 3800
+    assert tracker.maximum == 4396
+    assert tracker.span == 596
 
 
-def test_axis_calibration_supports_inverted_servo() -> None:
-    calibration = build_axis_calibration(
+def test_range_calibration_uses_midpoint_and_static_direction() -> None:
+    calibration = build_range_calibration(
         3,
         AXES[3],
-        raw_min=2560,
-        raw_home=2048,
-        raw_max=512,
-        spreads={"min": 0, "home": 0, "max": 0},
+        encoder_low=1000,
+        encoder_high=3000,
+        sample_count=120,
     )
 
     assert calibration["direction"] == -1
-    assert not calibration_warnings(
-        AXES[3],
-        raw_min=2560,
-        raw_home=2048,
-        raw_max=512,
-        spreads={"min": 0, "home": 0, "max": 0},
+    assert calibration["raw_min"] == 3000
+    assert calibration["raw_home"] == 2000
+    assert calibration["raw_max"] == 1000
+    assert calibration["raw_min_delta"] == 1000
+    assert calibration["raw_max_delta"] == -1000
+    assert math.isclose(calibration["q_home"], math.pi / 4)
+    assert math.isclose(calibration["mean_steps_per_radian"], 2000 / math.pi)
+
+
+def test_complete_sweep_replaces_all_twelve_axes() -> None:
+    trackers = {}
+    for motor_id in ALL_SERVO_IDS:
+        tracker = RangeTracker()
+        tracker.observe(1000)
+        tracker.observe(3000)
+        trackers[motor_id] = tracker
+
+    calibration = build_complete_calibration(
+        role="leader",
+        port="/dev/cu.usbmodem101",
+        baudrate=1_000_000,
+        trackers=trackers,
+        minimum_span=100,
     )
 
-
-def test_axis_calibration_jointly_resolves_encoder_wrap() -> None:
-    min_delta, max_delta = resolve_endpoint_deltas(
-        AXES[5],
-        raw_min=1415,
-        raw_home=3456,
-        raw_max=3010,
-    )
-
-    assert min_delta == 2055
-    assert max_delta == -446
-
-    calibration = build_axis_calibration(
-        5,
-        AXES[5],
-        raw_min=1415,
-        raw_home=3456,
-        raw_max=3010,
-        spreads={"min": 4, "home": 1, "max": 1},
-    )
-    assert calibration["direction"] == -1
-    assert calibration["raw_min_delta"] == 2055
-    assert calibration["raw_max_delta"] == -446
-    assert math.isclose(raw_to_mujoco_position(1415, calibration), -3 * math.pi / 4)
-    assert raw_to_mujoco_position(3456, calibration) == 0.0
-    assert math.isclose(raw_to_mujoco_position(3010, calibration), math.pi / 4)
+    assert calibration["role"] == "leader"
+    assert calibration["calibration_method"] == "simultaneous_range_sweep"
+    assert set(calibration["axes"]) == {str(motor_id) for motor_id in ALL_SERVO_IDS}
 
 
-def test_scale_difference_is_advisory_only() -> None:
-    problems, advisories = calibration_checks(
-        AXES[5],
-        raw_min=1415,
-        raw_home=3456,
-        raw_max=3010,
-        spreads={"min": 4, "home": 1, "max": 1},
-    )
-
-    assert problems == []
-    assert advisories == ["negative and positive encoder scales differ by more than 15%"]
-
-
-def test_identical_min_home_and_max_requests_recapture_without_dividing_by_zero() -> None:
-    problems, advisories = calibration_checks(
-        AXES[9],
-        raw_min=2071,
-        raw_home=2071,
-        raw_max=2071,
-        spreads={"min": 0, "home": 0, "max": 0},
-    )
-    preview = build_axis_calibration(
-        9,
-        AXES[9],
-        raw_min=2071,
-        raw_home=2071,
-        raw_max=2071,
-        spreads={"min": 0, "home": 0, "max": 0},
-    )
-
-    assert "an endpoint is too close to home" in problems
-    assert "minimum and maximum are not on opposite sides of home" in problems
-    assert advisories == []
-    assert preview["raw_min_delta"] == 0
-    assert preview["raw_max_delta"] == 0
-    assert preview["mean_steps_per_radian"] == 0
-
-
-def test_finger_minimum_and_home_must_match() -> None:
-    warnings = calibration_warnings(
-        AXES[11],
-        raw_min=1900,
-        raw_home=2000,
-        raw_max=2652,
-        spreads={"min": 0, "home": 0, "max": 0},
-    )
-
-    assert "minimum and home represent q=0 but their readings differ" in warnings
-
-
-def test_load_calibration_for_resume(tmp_path) -> None:
+def test_load_range_calibration(tmp_path) -> None:
     path = tmp_path / "calibration.json"
     path.write_text('{"schema_version": 1, "axes": {"1": {"raw_home": 2048}}}')
 
     calibration = load_calibration(path)
 
     assert calibration["axes"]["1"]["raw_home"] == 2048
-
-
-def test_separate_axis_calibration_preserves_existing_axes(tmp_path) -> None:
-    path = tmp_path / "calibration.json"
-    path.write_text(
-        '{"schema_version": 1, "port": "old", "baudrate": 1000000, '
-        '"axes": {"2": {"raw_home": 2213}}}'
-    )
-
-    calibration, selected_ids, replacing_ids = prepare_calibration(
-        path,
-        overwrite=False,
-        resume=False,
-        requested_ids=[4],
-        selected_ids=[4],
-        port="/dev/cu.usbmodem101",
-        baudrate=1_000_000,
-    )
-
-    assert calibration["axes"]["2"]["raw_home"] == 2213
-    assert selected_ids == [4]
-    assert replacing_ids == []
-
-
-def test_recalibrating_one_axis_replaces_only_that_axis(tmp_path) -> None:
-    path = tmp_path / "calibration.json"
-    path.write_text(
-        '{"schema_version": 1, "axes": {"2": {"raw_home": 2213}, "4": {"raw_home": 2000}}}'
-    )
-
-    calibration, selected_ids, replacing_ids = prepare_calibration(
-        path,
-        overwrite=False,
-        resume=False,
-        requested_ids=[4],
-        selected_ids=[4],
-        port="/dev/cu.usbmodem101",
-        baudrate=1_000_000,
-    )
-
-    assert set(calibration["axes"]) == {"2", "4"}
-    assert selected_ids == [4]
-    assert replacing_ids == [4]
 
 
 def test_raw_to_mujoco_position_uses_all_three_calibration_points() -> None:

@@ -3,21 +3,18 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from unittest.mock import call, patch
 
 import pytest
 
 from hardware.axes import AXES
-from hardware.calibrate_feetech_follower import (
-    FOLLOWER_HOME_RAW,
-    capture_follower_reference_poses,
-    center_follower_home,
-    centered_raw,
-    follower_hardware_limits,
-    follower_home_target,
+from hardware.calibrate_feetech import (
+    ALL_SERVO_IDS,
+    RangeTracker,
+    build_complete_calibration,
+    commission_follower,
 )
 from hardware.calibration import (
-    build_axis_calibration,
+    build_range_calibration,
     joint_to_raw_position,
     load_calibrated_axes,
     raw_to_joint_position,
@@ -72,127 +69,61 @@ def _write_follower_calibration(path: Path) -> None:
     )
 
 
-def test_follower_captures_home_once_and_last() -> None:
-    bus = object()
-    with patch(
-        "hardware.calibrate_feetech_follower.capture_pose",
-        side_effect=[(1000, 1), (3000, 3), (2000, 2)],
-    ) as capture:
-        raw_min, raw_home, raw_max, spreads = capture_follower_reference_poses(
-            bus,
-            motor="servo_1",
-            axis=AXES[1],
-            samples=9,
-            retries=2,
-        )
-
-    assert (raw_min, raw_home, raw_max) == (1000, 2000, 3000)
-    assert spreads == {"min": 1, "home": 2, "max": 3}
-    assert [invocation.kwargs["pose_name"] for invocation in capture.call_args_list] == [
-        "MIN",
-        "MAX",
-        "HOME",
-    ]
-    assert capture.call_args_list[-1] == call(
-        bus,
-        motor="servo_1",
-        pose_name="HOME",
-        q_value=0.0,
-        samples=9,
-        retries=2,
-    )
-
-
-def test_joint_to_raw_position_round_trips_piecewise_calibration() -> None:
-    calibration = build_axis_calibration(
+def test_joint_to_raw_position_round_trips_sweep_calibration() -> None:
+    calibration = build_range_calibration(
         3,
         AXES[3],
-        raw_min=4,
-        raw_home=3633,
-        raw_max=2094,
-        spreads={"min": 0, "home": 0, "max": 0},
+        encoder_low=1000,
+        encoder_high=3000,
+        sample_count=100,
     )
 
-    for q in (-math.pi / 4, -0.2, 0.0, 0.8, 3 * math.pi / 4):
+    for q in (-math.pi / 4, -0.2, math.pi / 4, 0.8, 3 * math.pi / 4):
         raw = joint_to_raw_position(q, calibration)
         assert math.isclose(raw_to_joint_position(raw, calibration), q, abs_tol=0.002)
 
 
-def test_center_follower_home_writes_position_mode_and_offset() -> None:
+def test_follower_sweep_commissioning_centers_all_servos_and_writes_limits() -> None:
     class FakeBus:
         def __init__(self) -> None:
-            self.values = {"Homing_Offset": 0}
-            self.writes: list[tuple[str, int]] = []
+            self.values = {
+                f"servo_{motor_id}": {"Homing_Offset": 0}
+                for motor_id in ALL_SERVO_IDS
+            }
+            self.writes: list[tuple[str, str, int]] = []
 
         def write(self, name, motor, value, **_kwargs) -> None:
-            assert motor == "servo_2"
-            self.values[name] = value
-            self.writes.append((name, value))
+            self.values[motor][name] = value
+            self.writes.append((name, motor, value))
 
         def read(self, name, motor, **_kwargs):
-            assert motor == "servo_2"
-            return self.values[name]
+            return self.values[motor][name]
 
+    trackers = {}
+    for motor_id in ALL_SERVO_IDS:
+        tracker = RangeTracker()
+        tracker.observe(1000)
+        tracker.observe(3000)
+        trackers[motor_id] = tracker
+    calibration = build_complete_calibration(
+        role="follower",
+        port="/dev/cu.follower",
+        baudrate=1_000_000,
+        trackers=trackers,
+        minimum_span=100,
+    )
     bus = FakeBus()
-    offset, shift = center_follower_home(
-        bus,
-        motor="servo_2",
-        raw_home=3500,
-        retries=2,
-    )
+    commission_follower(bus, calibration, retries=2)
 
-    assert shift == 1452
-    assert offset == 1452
-    assert centered_raw(3500, shift) == FOLLOWER_HOME_RAW
-    assert ("Operating_Mode", 0) in bus.writes
-    assert ("Homing_Offset", 1452) in bus.writes
-
-
-def test_follower_hardware_limits_accept_centered_inverted_axis() -> None:
-    calibration = _axis_calibration()
-    calibration.update(raw_min=3072, raw_max=1024)
-
-    assert follower_hardware_limits(calibration) == (1024, 3072)
-
-
-def test_follower_home_target_avoids_wrap_for_asymmetric_half_turn() -> None:
-    calibration = {
-        "raw_min_delta": 2055,
-        "raw_max_delta": -446,
-    }
-
-    target_home = follower_home_target(calibration)
-
-    assert target_home == 2040
-    assert target_home + 2055 == 4095
-    assert target_home - 446 == 1594
-
-
-def test_asymmetric_follower_recenter_remains_bidirectional_and_contiguous() -> None:
-    original = build_axis_calibration(
-        5,
-        AXES[5],
-        raw_min=1415,
-        raw_home=3456,
-        raw_max=3010,
-        spreads={"min": 0, "home": 0, "max": 0},
-    )
-    target_home = follower_home_target(original)
-    shift = 1416
-    recentered = build_axis_calibration(
-        5,
-        AXES[5],
-        raw_min=centered_raw(1415, shift),
-        raw_home=centered_raw(3456, shift),
-        raw_max=centered_raw(3010, shift),
-        spreads={"min": 0, "home": 0, "max": 0},
-    )
-
-    assert target_home == recentered["raw_home"] == 2040
-    assert follower_hardware_limits(recentered) == (1594, 4095)
-    assert joint_to_raw_position(AXES[5].q_min, recentered) == 4095
-    assert joint_to_raw_position(0.0, recentered) == 2040
-    assert joint_to_raw_position(AXES[5].q_max, recentered) == 1594
+    assert len(bus.writes) == len(ALL_SERVO_IDS) * 6
+    for motor_id in ALL_SERVO_IDS:
+        axis = calibration["axes"][str(motor_id)]
+        motor = f"servo_{motor_id}"
+        assert axis["raw_home"] == 2048
+        assert axis["hardware_min"] == 1048
+        assert axis["hardware_max"] == 3048
+        assert bus.values[motor]["Operating_Mode"] == 0
+        assert bus.values[motor]["Homing_Offset"] == -48
 
 
 def test_follower_requires_follower_role(tmp_path: Path) -> None:

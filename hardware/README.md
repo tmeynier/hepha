@@ -316,94 +316,157 @@ To scan without starting the monitor:
 Every servo on a bus must have a unique ID. Duplicate IDs cannot be reliably
 distinguished because their replies collide on the shared wire.
 
-## Calibrate each physical axis
+## Read a USB camera
 
-The calibration utility captures three positions for one servo at a time:
-MuJoCo minimum, home (`q=0`), and MuJoCo maximum. It disables torque only for
-the axis currently being calibrated and never commands a position.
-
-Support the arm securely, then run:
+List camera indices that OpenCV can read:
 
 ```bash
-.venv/bin/python hardware/calibrate_feetech_positions.py
+.venv/bin/python hardware/read_usb_camera.py --list
 ```
 
-Follow the prompts to move each joint manually. Nine encoder samples are taken
-at every pose and the median is saved. Progress is written after every completed
-axis to `hardware/feetech_calibration.json`.
-
-If calibration is interrupted, continue without repeating completed axes:
+Open the first detected camera in a live preview:
 
 ```bash
-.venv/bin/python hardware/calibrate_feetech_positions.py --resume
+.venv/bin/python hardware/read_usb_camera.py
 ```
 
-To calibrate one or more axes separately, pass their IDs. Existing calibration
-for every other axis is loaded and preserved automatically:
+Select a particular camera index with `--index 0`. For a terminal-only test,
+use `--no-display`; `--frames 100` optionally stops after 100 frames. On macOS,
+camera access must be enabled for Terminal or Codex under System Settings,
+Privacy & Security, Camera.
+
+## Record physical leader-to-follower teleoperation
+
+The physical recorder commands the calibrated follower from the leader while
+recording the follower's measured joint positions, the exact joint commands
+sent to it, and RGB frames from the USB camera. Its LeRobot schema contains no
+CNC action, CNC observation, drawer condition, or MuJoCo state.
+
+Authenticate once before uploading:
+
+```bash
+.venv/bin/hf auth login
+```
+
+Then record and upload, replacing `YOUR_HF_USER` with your Hugging Face account:
+
+```bash
+.venv/bin/python -m hepha_lerobot.recording.physical_teleop \
+  --repo-id YOUR_HF_USER/hepha_physical_teleop \
+  --root datasets/hepha_physical_teleop \
+  --leader-port /dev/cu.usbmodem58FA1019951 \
+  --follower-port /dev/cu.usbmodem58FA1020401 \
+  --camera-index 0 \
+  --episodes 20 \
+  --episode-seconds 60 \
+  --push-to-hub
+```
+
+The camera preview is enabled by default. At the end of each attempt, choose
+`SAVE`, `DISCARD`, `RETRY`, or `QUIT`. Only saved episodes are finalized and
+uploaded. Use a new `--root` for another dataset; `--overwrite` intentionally
+replaces an existing local recording.
+
+## Run a trained ACT policy on the physical follower
+
+The physical rollout uses the same 12-joint order, calibrated radians, RGB
+camera preprocessing, and saved LeRobot pre/postprocessors as physical dataset
+recording. It never uses the leader or CNC. Authenticate with Hugging Face when
+the model repository is private.
+
+Always start torque-disabled:
+
+```bash
+.venv/bin/python -m hepha_lerobot.evaluation.physical_rollout \
+  --policy-path tmeynier/hepha_act_physical \
+  --follower-port /dev/cu.usbmodem58FA1020401 \
+  --camera-index 0 \
+  --device mps \
+  --dry-run
+```
+
+The dry run reads the real follower and camera and displays predictions without
+writing a goal position. Support the unpowered arms. Confirm that the camera is
+correct, inference is responsive, the checkpoint reports 12 state/action
+dimensions, and predicted targets are finite before enabling motion.
+
+For the first powered test, clear the full workspace and keep immediate power
+removal within reach:
+
+```bash
+.venv/bin/python -m hepha_lerobot.evaluation.physical_rollout \
+  --policy-path tmeynier/hepha_act_physical \
+  --follower-port /dev/cu.usbmodem58FA1020401 \
+  --camera-index 0 \
+  --device mps \
+  --max-velocity-deg 10 \
+  --acceleration 30 \
+  --torque-limit 300
+```
+
+SPACE in the camera window is the final torque-enable confirmation. Q, Escape,
+Ctrl+C, a camera/bus exception, a non-finite action, or a control-cycle watchdog
+failure stops the rollout; follower cleanup disables torque. Commands are
+clamped to calibrated joint ranges and rate-limited. The physical scene and
+starting pose must resemble the demonstrations, and the CNC must remain in the
+same fixed position represented in the arm-only dataset.
+
+## Calibrate a complete leader or follower arm
+
+Leader and follower calibration now use the same simultaneous range-sweep
+procedure. Calibration always covers all 12 servos on the selected bus; there
+is no per-axis mode and no separate MIN, HOME, or MAX prompt.
+
+Support the complete arm before starting because torque is disabled on all 12
+servos together. Start leader calibration with:
 
 ```bash
 .venv/bin/python hardware/calibrate_feetech_positions.py \
-  --ids 4
+  --port /dev/cu.usbmodem58FA1019951
 ```
 
-When both `--port` and `--ids` are supplied, calibration pings only the selected
-IDs at 1,000,000 baud and skips exhaustive discovery. Use `--baudrate` for a
-different known rate. If the quick ping fails, the utility automatically falls
-back to the full scan.
-
-If a selected ID is already calibrated, only that ID is replaced. Use
-`--overwrite` only when you intentionally want to discard the complete existing
-calibration and start a new file.
-
-The finger joints use `q=0` for both minimum and home, so leave the finger
-closed for both captures; maximum is the fully open pose.
-
-Encoder endpoints are unwrapped jointly when a calibrated range crosses the
-12-bit encoder zero or extends slightly beyond half a turn from home. A scale
-difference between the two sides is reported as an advisory and does not force
-the axis to be recaptured.
-
-## Calibrate a physical follower arm
-
-The follower uses a separate calibration because its encoder zero, horn
-installation, and direction can differ from the leader. Connect the follower
-through its own USB motor-bus adapter. Duplicate servo IDs are allowed across
-the two arms because they are on separate serial buses.
-
-Follower calibration captures the same three reference poses as leader
-calibration, but orders them as `MIN`, `MAX`, then `HOME`. Ending at `HOME`
-allows the utility to verify and commission the servo without asking for HOME
-twice. Press Enter to capture each pose.
+Start follower calibration with:
 
 ```bash
-.venv/bin/hepha-follower-calibrate \
-  --port /dev/cu.FOLLOWER_PORT \
-  --ids 2 4 6 8 10 12
+.venv/bin/python hardware/calibrate_feetech_follower.py \
+  --port /dev/cu.usbmodem58FA1020401
 ```
 
-The default output is `hardware/feetech_follower_calibration.json`. In addition
-to saving the three points, this utility persistently:
-
-- centers the follower's captured home near raw encoder position 2048;
-- selects position-control mode;
-- writes hardware minimum and maximum position limits.
-
-It never sends a goal position during calibration, so all calibration movement
-is manual. Because homing and limit settings are written to the servo, verify
-the selected port belongs to the follower before pressing Enter to begin.
-
-As with leader calibration, one axis can be calibrated or replaced without
-removing the others:
+The unified form is equivalent:
 
 ```bash
-.venv/bin/hepha-follower-calibrate --ids 4
+.venv/bin/python -m hardware.calibrate_feetech \
+  --role leader \
+  --port /dev/cu.usbmodem58FA1019951
 ```
 
-Supply both `--port` and `--ids` to use the same fast direct-ping path instead
-of scanning every baud rate and servo ID.
+Recording begins immediately after the bus is connected and torque is disabled.
+Move every joint through its complete physical range, in any order and as many
+times as useful. The command continuously reads all 12 encoders together. Press
+Enter once every joint has reached both endpoints.
 
-Use `--resume` after an interruption. Re-run the interrupted axis because its
-homing offset may already have been centered before the interruption.
+For each servo, the software continuously unwraps the cyclic 0–4095 encoder,
+stores the smallest and largest observed positions, and defines HOME as their
+exact midpoint. The joint-space HOME is likewise the midpoint between that
+joint's configured MuJoCo minimum and maximum. Encoder direction cannot be
+deduced from an unordered range sweep, so its sign is part of the canonical ID
+mapping in `hardware/axes.py`; leader and follower use the same signs.
+
+The complete calibration is validated and then replaces the selected role's
+JSON atomically:
+
+- leader: `hardware/feetech_calibration.json`
+- follower: `hardware/feetech_follower_calibration.json`
+
+If any servo moved fewer than 100 encoder steps, or if an observed interval
+spans a complete encoder revolution, nothing is saved. Ctrl+C also cancels the
+whole run without changing the existing JSON. Supplying `--port` skips the slow
+port and baud-rate scan; all IDs 1–12 are pinged once on that connection.
+
+Follower capture is identical to leader capture. After recording, the follower
+command automatically centers every measured midpoint at raw 2048, selects
+position-control mode, and writes non-wrapping hardware limits. It never sends
+a goal position; all calibration movement remains manual.
 
 ## Teleoperate a physical follower
 

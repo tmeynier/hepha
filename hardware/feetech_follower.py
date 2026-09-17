@@ -148,7 +148,7 @@ class FeetechFollower:
                 details = "; ".join(mismatches)
                 raise RuntimeError(
                     f"Follower ID {axis.servo_id} does not match its calibration: {details}. "
-                    "Re-run follower calibration for this axis."
+                    "Re-run complete follower calibration."
                 )
 
     def disable_torque(self) -> None:
