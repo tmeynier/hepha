@@ -338,8 +338,8 @@ Privacy & Security, Camera.
 ## Record physical leader-to-follower teleoperation
 
 The physical recorder commands the calibrated follower from the leader while
-recording the follower's measured joint positions, the exact joint commands
-sent to it, and RGB frames from the USB camera. Its LeRobot schema contains no
+recording the follower's measured joint positions, the exact absolute joint
+commands sent to it, and RGB frames from the USB camera. Its LeRobot schema contains no
 CNC action, CNC observation, drawer condition, or MuJoCo state.
 
 Authenticate once before uploading:

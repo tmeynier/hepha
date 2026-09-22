@@ -568,11 +568,14 @@ def record_episode(
         started = time.monotonic()
         dt = started - last_tick
         last_tick = started
+
+        # Follow LeRobot's causal recording order: capture the observation that
+        # conditions the policy before deriving and transmitting its action.
+        follower_positions = follower.read_joint_positions()
+        preview, rgb = interface.read()
         leader_positions = leader.read_joint_positions()
         commanded = limiter.apply(leader_positions, dt)
         sent = follower.write_joint_positions(commanded)
-        follower_positions = follower.read_joint_positions()
-        preview, rgb = interface.read()
         add_physical_frame(
             dataset,
             joints=joints,

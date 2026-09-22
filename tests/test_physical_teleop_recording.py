@@ -151,23 +151,50 @@ def test_preview_window_can_be_fullscreen(monkeypatch) -> None:
     )
 
 
-def test_record_episode_space_finishes_early(monkeypatch) -> None:
+def test_record_episode_uses_observation_then_action_order(monkeypatch) -> None:
     image = np.zeros((2, 3, 3), dtype=np.uint8)
+    calls = []
+
+    def read_camera():
+        calls.append("read_camera")
+        return image, image
+
+    def read_leader():
+        calls.append("read_leader")
+        return {"shoulder_r": 0.3}
+
+    def read_follower():
+        calls.append("read_state")
+        return {"shoulder_r": 0.1}
+
+    def limit(targets, _dt):
+        calls.append("limit")
+        return targets
+
+    def send(targets):
+        calls.append("send")
+        return targets
+
     interface = SimpleNamespace(
-        read=lambda: (image, image),
+        read=read_camera,
         present=lambda *_args, **_kwargs: "space",
     )
-    leader = SimpleNamespace(read_joint_positions=lambda: {"shoulder_r": 0.1})
+    leader = SimpleNamespace(read_joint_positions=read_leader)
     follower = SimpleNamespace(
-        write_joint_positions=lambda targets: targets,
-        read_joint_positions=lambda: {"shoulder_r": 0.1},
+        write_joint_positions=send,
+        read_joint_positions=read_follower,
     )
-    limiter = SimpleNamespace(apply=lambda targets, _dt: targets)
+    limiter = SimpleNamespace(apply=limit)
     captured = []
+
+    def capture_frame(*_args, **kwargs):
+        calls.append("save")
+        captured.append(kwargs)
+
     monkeypatch.setattr(
         physical_teleop,
         "add_physical_frame",
-        lambda *_args, **kwargs: captured.append(kwargs),
+        capture_frame,
     )
 
     frames = physical_teleop.record_episode(
@@ -187,3 +214,6 @@ def test_record_episode_space_finishes_early(monkeypatch) -> None:
 
     assert frames == 1
     assert len(captured) == 1
+    assert calls == ["read_state", "read_camera", "read_leader", "limit", "send", "save"]
+    assert captured[0]["follower_positions"] == {"shoulder_r": 0.1}
+    assert captured[0]["follower_commands"] == {"shoulder_r": 0.3}
