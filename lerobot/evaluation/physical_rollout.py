@@ -1,4 +1,4 @@
-"""Run a trained LeRobot ACT policy on the calibrated physical Hepha follower."""
+"""Run a trained LeRobot ACT or PI0 policy on the calibrated physical follower."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--n-action-steps",
         type=positive_integer,
         default=None,
-        help="Override actions consumed from each ACT chunk before replanning.",
+        help="Override actions consumed from each policy chunk before replanning.",
     )
     parser.add_argument(
         "--temporal-ensemble-coeff",
@@ -118,33 +118,61 @@ def _feature_shape(features: dict[str, Any] | None, key: str) -> tuple[int, ...]
     return tuple(int(value) for value in features[key].shape)
 
 
+def _processed_observation_key(preprocessor: Any | None, raw_key: str) -> str:
+    """Apply the saved LeRobot observation-key renames without processing tensors."""
+    key = raw_key
+    for step in getattr(preprocessor, "steps", ()):
+        rename_map = getattr(step, "rename_map", None)
+        if rename_map:
+            key = rename_map.get(key, key)
+    return key
+
+
 def validate_physical_policy_features(
     policy_config: Any,
     *,
+    preprocessor: Any | None = None,
     camera_name: str,
     width: int,
     height: int,
     joint_count: int = len(CANONICAL_JOINTS),
 ) -> None:
     """Reject checkpoints whose physical input/output schema cannot match the recorder."""
-    if policy_config.type != "act":
+    if policy_config.type not in {"act", "pi0"}:
         raise ValueError(
-            f"Physical rollout currently supports an original ACT policy, not "
+            "Physical rollout supports official LeRobot ACT and PI0 policies, not "
             f"{policy_config.type!r}."
         )
     state_shape = _feature_shape(policy_config.input_features, OBS_STATE)
-    if state_shape != (joint_count,):
+    accepted_state_shapes = {(joint_count,)}
+    if policy_config.type == "pi0":
+        # The pretrained PI0 configuration keeps its padded 32-D state schema.
+        # PI0 pads the 12 physical Hepha joints internally.
+        accepted_state_shapes.add((int(policy_config.max_state_dim),))
+    if state_shape not in accepted_state_shapes:
         raise ValueError(
             f"Policy expects {OBS_STATE} shape {state_shape}; physical Hepha requires "
-            f"({joint_count},)."
+            f"{sorted(accepted_state_shapes)}."
         )
-    image_key = f"{OBS_IMAGES}.{camera_name}"
-    image_shape = _feature_shape(policy_config.input_features, image_key)
-    accepted_image_shapes = {(3, height, width), (height, width, 3)}
-    if image_shape not in accepted_image_shapes:
+    raw_image_key = f"{OBS_IMAGES}.{camera_name}"
+    policy_image_key = _processed_observation_key(preprocessor, raw_image_key)
+    image_shape = _feature_shape(policy_config.input_features, policy_image_key)
+    if image_shape is None:
         raise ValueError(
-            f"Policy expects {image_key} shape {image_shape}; this rollout supplies "
-            f"RGB {width}x{height}."
+            f"The saved preprocessor maps physical camera {raw_image_key!r} to "
+            f"{policy_image_key!r}, but that key is absent from the policy inputs."
+        )
+    if policy_config.type == "act":
+        accepted_image_shapes = {(3, height, width), (height, width, 3)}
+        if image_shape not in accepted_image_shapes:
+            raise ValueError(
+                f"Policy expects {policy_image_key} shape {image_shape}; this rollout "
+                f"supplies RGB {width}x{height}."
+            )
+    elif len(image_shape) != 3:
+        raise ValueError(
+            f"PI0 expects {policy_image_key} shape {image_shape}; a three-dimensional "
+            "RGB visual feature is required."
         )
     action_shape = _feature_shape(policy_config.output_features, ACTION)
     if action_shape != (joint_count,):
@@ -182,9 +210,7 @@ def action_targets(
     else:
         values = np.asarray(action).squeeze()
     if values.shape != (len(joints),):
-        raise ValueError(
-            f"Policy returned action shape {values.shape}; expected ({len(joints)},)."
-        )
+        raise ValueError(f"Policy returned action shape {values.shape}; expected ({len(joints)},).")
     if not np.isfinite(values).all():
         raise RuntimeError("Policy returned a non-finite physical joint target.")
     return {joint: float(value) for joint, value in zip(joints, values, strict=True)}
@@ -224,9 +250,7 @@ def predict_targets(
     return action_targets(action)
 
 
-def _maximum_error_degrees(
-    first: dict[str, float], second: dict[str, float]
-) -> float:
+def _maximum_error_degrees(first: dict[str, float], second: dict[str, float]) -> float:
     return max(math.degrees(abs(first[joint] - second[joint])) for joint in CANONICAL_JOINTS)
 
 
@@ -247,12 +271,14 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
     )
     validate_physical_policy_features(
         policy_config,
+        preprocessor=preprocessor,
         camera_name=args.camera_name,
         width=args.width,
         height=args.height,
     )
+    policy_label = "PI0" if policy_config.type == "pi0" else policy_config.type.upper()
     print(
-        "Policy ready: "
+        f"{policy_label} policy ready: "
         f"chunk_size={policy_config.chunk_size}, "
         f"n_action_steps={policy_config.n_action_steps}, "
         f"camera={args.camera_name}, joints={len(CANONICAL_JOINTS)}"
@@ -273,7 +299,7 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
     first_frame = read_first_frame(capture)
     interface = RecordingInterface(
         capture=capture,
-        window_name=f"Hepha ACT physical rollout camera {args.camera_index}",
+        window_name=f"Hepha {policy_label} physical rollout camera {args.camera_index}",
         record_width=args.width,
         record_height=args.height,
         preview_width=args.preview_width,
@@ -336,7 +362,7 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
                 )
             else:
                 interface.confirm(
-                    title="ACT rollout safety confirmation",
+                    title=f"{policy_label} rollout safety confirmation",
                     message=(
                         "Clear the workspace and keep power removal ready. "
                         "SPACE enables follower torque."
@@ -361,8 +387,7 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
             last_tick = started_at
             previous_status_width = 0
             while (
-                args.duration_seconds == 0
-                or time.monotonic() - started_at < args.duration_seconds
+                args.duration_seconds == 0 or time.monotonic() - started_at < args.duration_seconds
             ):
                 cycle_started = time.monotonic()
                 dt = min(max(0.0, cycle_started - last_tick), 2.0 * period)
@@ -403,7 +428,7 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
                 previous_status_width = max(previous_status_width, len(status))
                 action = interface.present(
                     preview,
-                    title=f"Hepha ACT rollout — {mode}",
+                    title=f"Hepha {policy_label} rollout — {mode}",
                     message=(
                         f"Cycle {cycle_seconds * 1000:.0f} ms | "
                         f"policy delta {target_error:.1f} deg | "

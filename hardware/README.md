@@ -367,7 +367,7 @@ The camera preview is enabled by default. At the end of each attempt, choose
 uploaded. Use a new `--root` for another dataset; `--overwrite` intentionally
 replaces an existing local recording.
 
-## Run a trained ACT policy on the physical follower
+## Run a trained ACT or PI0 policy on the physical follower
 
 The physical rollout uses the same 12-joint order, calibrated radians, RGB
 camera preprocessing, and saved LeRobot pre/postprocessors as physical dataset
@@ -389,6 +389,35 @@ The dry run reads the real follower and camera and displays predictions without
 writing a goal position. Support the unpowered arms. Confirm that the camera is
 correct, inference is responsive, the checkpoint reports 12 state/action
 dimensions, and predicted targets are finite before enabling motion.
+
+PI0 uses the same hardware safety path and the official saved LeRobot policy,
+preprocessor, and postprocessor. Install its optional dependencies once:
+
+```bash
+uv pip install --python .venv/bin/python -e ".[pi0]"
+```
+
+The physical observation keeps the dataset key `observation.images.head_camera`.
+The rename saved during PI0 training converts it to
+`observation.images.base_0_rgb`, and the task text is passed to PI0's tokenizer.
+Test a PI0 checkpoint torque-disabled first (a large PI0 checkpoint may be slow
+or exceed the unified memory available on a Mac):
+
+```bash
+.venv/bin/python -m hepha_lerobot.evaluation.physical_rollout \
+  --policy-path tmeynier/hepha_pi0_physical_v2 \
+  --follower-port /dev/cu.usbmodem58FA1020401 \
+  --camera-index 0 \
+  --device mps \
+  --task "Put the white cube in the bowl" \
+  --n-action-steps 10 \
+  --fps 5 \
+  --watchdog-seconds 120 \
+  --dry-run
+```
+
+Do not pass `--temporal-ensemble-coeff` to PI0. PI0 uses its own flow-matching
+inference and action queue; temporal ensembling is ACT-only.
 
 For the first powered test, clear the full workspace and keep immediate power
 removal within reach:

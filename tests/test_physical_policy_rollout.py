@@ -15,12 +15,14 @@ def _policy_config(
     image_shape=(3, 256, 256),
     action_shape=(12,),
     policy_type="act",
+    camera_name="head_camera",
 ):
     return SimpleNamespace(
         type=policy_type,
+        max_state_dim=32,
         input_features={
             OBS_STATE: SimpleNamespace(shape=state_shape),
-            f"{OBS_IMAGES}.head_camera": SimpleNamespace(shape=image_shape),
+            f"{OBS_IMAGES}.{camera_name}": SimpleNamespace(shape=image_shape),
         },
         output_features={ACTION: SimpleNamespace(shape=action_shape)},
     )
@@ -41,11 +43,54 @@ def test_physical_policy_schema_matches_recorded_dataset() -> None:
         (_policy_config(state_shape=(15,)), "observation.state"),
         (_policy_config(image_shape=(3, 480, 640)), "head_camera"),
         (_policy_config(action_shape=(15,)), "action"),
-        (_policy_config(policy_type="diffusion"), "original ACT"),
+        (_policy_config(policy_type="diffusion"), "ACT and PI0"),
     ],
 )
 def test_physical_policy_schema_rejects_incompatible_checkpoint(config, message) -> None:
     with pytest.raises(ValueError, match=message):
+        physical_rollout.validate_physical_policy_features(
+            config,
+            camera_name="head_camera",
+            width=256,
+            height=256,
+        )
+
+
+def test_pi0_schema_accepts_padded_state_and_saved_camera_rename() -> None:
+    config = _policy_config(
+        state_shape=(32,),
+        image_shape=(3, 224, 224),
+        policy_type="pi0",
+        camera_name="base_0_rgb",
+    )
+    preprocessor = SimpleNamespace(
+        steps=[
+            SimpleNamespace(
+                rename_map={
+                    f"{OBS_IMAGES}.head_camera": f"{OBS_IMAGES}.base_0_rgb",
+                }
+            )
+        ]
+    )
+
+    physical_rollout.validate_physical_policy_features(
+        config,
+        preprocessor=preprocessor,
+        camera_name="head_camera",
+        width=256,
+        height=256,
+    )
+
+
+def test_pi0_schema_rejects_missing_saved_camera_rename() -> None:
+    config = _policy_config(
+        state_shape=(32,),
+        image_shape=(3, 224, 224),
+        policy_type="pi0",
+        camera_name="base_0_rgb",
+    )
+
+    with pytest.raises(ValueError, match="absent from the policy inputs"):
         physical_rollout.validate_physical_policy_features(
             config,
             camera_name="head_camera",
