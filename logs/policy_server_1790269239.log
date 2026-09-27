@@ -1,0 +1,99 @@
+DEBUG 2026-09-24 19:00:39 formatter.py:57 action type: None, Result: , nargs: 0, default metavar: None
+DEBUG 2026-09-24 19:00:39 formatter.py:57 action type: <class 'str'>, Result: str, nargs: None, default metavar: None
+DEBUG 2026-09-24 19:00:39 _wrapper.py:181 wrapped field at host has a default value of localhost
+DEBUG 2026-09-24 19:00:39 _wrapper.py:181 wrapped field at port has a default value of 8080
+DEBUG 2026-09-24 19:00:39 _wrapper.py:181 wrapped field at fps has a default value of 30
+DEBUG 2026-09-24 19:00:39 _wrapper.py:181 wrapped field at inference_latency has a default value of 0.03333333333333333
+DEBUG 2026-09-24 19:00:39 _wrapper.py:181 wrapped field at obs_queue_timeout has a default value of 2
+DEBUG 2026-09-24 19:00:39 ocstring.py:298 Warning: Unable to parse attribute docstring:         default=DEFAULT_INFERENCE_LATENCY, metadata={"help": "Target inference latency in seconds"}
+DEBUG 2026-09-24 19:00:39 ocstring.py:298 Warning: Unable to parse attribute docstring:         default=DEFAULT_OBS_QUEUE_TIMEOUT, metadata={"help": "Timeout for observation queue in seconds"}
+DEBUG 2026-09-24 19:00:39 gparsing.py:152 
+POST PROCESSING
+
+DEBUG 2026-09-24 19:00:39 gparsing.py:153 (raw) parsed args: Namespace(host='127.0.0.1', port='8080', fps='5', inference_latency='0', obs_queue_timeout='10')
+DEBUG 2026-09-24 19:00:39 decoding.py:130 from_dict for <class 'lerobot.async_inference.configs.PolicyServerConfig'>
+DEBUG 2026-09-24 19:00:39 decoding.py:150 Decode name = host, type = <class 'str'>
+DEBUG 2026-09-24 19:00:39 decoding.py:150 Decode name = port, type = <class 'int'>
+DEBUG 2026-09-24 19:00:39 decoding.py:150 Decode name = fps, type = <class 'int'>
+DEBUG 2026-09-24 19:00:39 decoding.py:150 Decode name = inference_latency, type = <class 'float'>
+DEBUG 2026-09-24 19:00:39 decoding.py:150 Decode name = obs_queue_timeout, type = <class 'float'>
+INFO 2026-09-24 19:00:39 y_server.py:420 {'fps': 5,
+ 'host': '127.0.0.1',
+ 'inference_latency': 0.0,
+ 'obs_queue_timeout': 10.0,
+ 'port': 8080}
+INFO 2026-09-24 19:00:39 y_server.py:430 PolicyServer started on 127.0.0.1:8080
+INFO 2026-09-24 19:08:13 y_server.py:110 Client ipv4:127.0.0.1:54811 connected and ready
+INFO 2026-09-24 19:08:13 y_server.py:136 Receiving policy instructions from ipv4:127.0.0.1:54811 | Policy type: pi0 | Pretrained name or path: tmeynier/hepha_pi0_physical_v2 | Actions per chunk: 10 | Device: cuda
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 connect_tcp.started host='huggingface.co' port=443 local_address=None timeout=10 socket_options=None
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x17fd3e960>
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 start_tls.started ssl_context=<ssl.SSLContext object at 0x303f32350> server_hostname='huggingface.co' timeout=10
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x17e7e1af0>
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 send_request_headers.started request=<Request [b'HEAD']>
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 send_request_headers.complete
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 send_request_body.started request=<Request [b'HEAD']>
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 send_request_body.complete
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 receive_response_headers.started request=<Request [b'HEAD']>
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 receive_response_headers.complete return_value=(b'HTTP/1.1', 404, b'Not Found', [(b'Content-Type', b'text/plain; charset=utf-8'), (b'Content-Length', b'15'), (b'Connection', b'keep-alive'), (b'Date', b'Thu, 24 Sep 2026 17:08:13 GMT'), (b'ETag', b'W/"f-mY2VvLxuxB7KhsoOdQTlMTccuAQ"'), (b'X-Powered-By', b'huggingface-moon'), (b'X-Request-Id', b'Root=1-6ab558fd-585a516c0ba7f0f716657c1f;f5150119-7440-43d3-9047-ff36c8e52b2d'), (b'RateLimit', b'"resolvers";r=4999;t=194'), (b'RateLimit-Policy', b'"fixed window";"resolvers";q=5000;w=300'), (b'cross-origin-opener-policy', b'same-origin'), (b'Referrer-Policy', b'strict-origin-when-cross-origin'), (b'Access-Control-Max-Age', b'86400'), (b'Access-Control-Allow-Origin', b'https://huggingface.co'), (b'Vary', b'Origin'), (b'Access-Control-Expose-Headers', b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash'), (b'X-Repo-Commit', b'ab419a338e7d91cec2427e6f495984acdc2a20b2'), (b'Accept-Ranges', b'bytes'), (b'X-Hub-Cache', b'MISS'), (b'X-Error-Code', b'EntryNotFound'), (b'X-Error-Message', b'Entry not found'), (b'X-Cache', b'Error from cloudfront'), (b'Via', b'1.1 63981dc5d36196bc20dc32938804362e.cloudfront.net (CloudFront)'), (b'X-Amz-Cf-Pop', b'ZRH52-P1'), (b'Alt-Svc', b'h3=":443"; ma=86400'), (b'X-Amz-Cf-Id', b'Lxiwu3Ombmf-Hnrea79SqzPSITaGHfJjmfRK2Naf8xhnJpThYh_QUg=='), (b'Strict-Transport-Security', b'max-age=31536000')])
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 receive_response_body.started request=<Request [b'HEAD']>
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 receive_response_body.complete
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 response_closed.started
+DEBUG 2026-09-24 19:08:13 re/_trace.py:47 response_closed.complete
+ERROR 2026-09-24 19:08:13 /_server.py:636 Exception calling application: config.json not found on the HuggingFace Hub in tmeynier/hepha_pi0_physical_v2
+Traceback (most recent call last):
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 797, in hf_raise_for_status
+    response.raise_for_status()
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://huggingface.co/tmeynier/hepha_pi0_physical_v2/resolve/main/config.json'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/lerobot/configs/policies.py", line 194, in from_pretrained
+    config_file = hf_hub_download(
+                  ^^^^^^^^^^^^^^^^
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1019, in hf_hub_download
+    return _hf_hub_download_to_cache_dir(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1089, in _hf_hub_download_to_cache_dir
+    (url_to_download, etag, commit_hash, expected_size, xet_file_data, head_call_error) = _get_metadata_or_catch_error(
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1713, in _get_metadata_or_catch_error
+    metadata = get_hf_file_metadata(
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1621, in get_hf_file_metadata
+    response = _httpx_follow_relative_redirects_with_backoff(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 728, in _httpx_follow_relative_redirects_with_backoff
+    hf_raise_for_status(response)
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 817, in hf_raise_for_status
+    raise _format(RemoteEntryNotFoundError, message, response, repo_type=repo_type, repo_id=repo_id) from e
+huggingface_hub.errors.RemoteEntryNotFoundError: 404 Client Error. (Request ID: Root=1-6ab558fd-585a516c0ba7f0f716657c1f;f5150119-7440-43d3-9047-ff36c8e52b2d)
+
+Entry Not Found for url: https://huggingface.co/tmeynier/hepha_pi0_physical_v2/resolve/main/config.json.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/grpc/_server.py", line 608, in _call_behavior
+    response_or_iterator = behavior(argument, context)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/lerobot/async_inference/policy_server.py", line 152, in SendPolicyInstructions
+    self.policy = policy_class.from_pretrained(policy_specs.pretrained_name_or_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/lerobot/policies/pi0/modeling_pi0.py", line 808, in from_pretrained
+    config = PreTrainedConfig.from_pretrained(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tristanmeynier/Documents/hepha/hepha/.venv/lib/python3.12/site-packages/lerobot/configs/policies.py", line 206, in from_pretrained
+    raise FileNotFoundError(
+FileNotFoundError: config.json not found on the HuggingFace Hub in tmeynier/hepha_pi0_physical_v2
+DEBUG 2026-09-24 19:24:50 re/_trace.py:47 close.started
+DEBUG 2026-09-24 19:24:50 re/_trace.py:47 close.complete

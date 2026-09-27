@@ -419,6 +419,90 @@ or exceed the unified memory available on a Mac):
 Do not pass `--temporal-ensemble-coeff` to PI0. PI0 uses its own flow-matching
 inference and action queue; temporal ensembling is ACT-only.
 
+### Run policy inference on a remote GPU
+
+LeRobot 0.6.1 includes an asynchronous gRPC policy server. Hepha can use that
+server while keeping the camera, servo bus, safety limiter, UI, and torque
+shutdown on the Mac. The remote server returns postprocessed chunks of 12
+absolute joint targets; Hepha overlaps the next request with execution of the
+current chunk.
+
+The LeRobot transport is unauthenticated and serializes Python objects. Never
+publish its port to the internet. Bind it to loopback on RunPod and carry it
+through an SSH tunnel. The private SSH key remains in `~/.ssh` and is handled by
+OpenSSH; it is deliberately not passed to Python or stored in this repository.
+
+On RunPod, install the same repository and LeRobot version used on the Mac:
+
+```bash
+cd /workspace/hepha
+source .venv/bin/activate
+uv pip install --python .venv/bin/python -e ".[pi0,remote]"
+```
+
+Authenticate with Hugging Face on RunPod if the checkpoint is private, then
+start the server. Keep `--host=127.0.0.1`; do not expose port 8080 as a RunPod
+public TCP port:
+
+```bash
+cd /workspace/hepha
+source .venv/bin/activate
+python -m lerobot.async_inference.policy_server \
+  --host=127.0.0.1 \
+  --port=8080 \
+  --fps=5 \
+  --inference_latency=0 \
+  --obs_queue_timeout=10
+```
+
+In a separate Mac terminal, use the SSH hostname and port shown by RunPod's
+**Connect** panel. This terminal remains occupied while the tunnel is active:
+
+```bash
+ssh -i /Users/YOUR_USER/.ssh/runpod_ed25519 \
+  -p RUNPOD_SSH_PORT \
+  -N \
+  -L 8080:127.0.0.1:8080 \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  root@RUNPOD_SSH_HOST
+```
+
+Install only the lightweight remote client dependencies on the Mac; PI0 itself
+does not need to load there:
+
+```bash
+.venv/bin/python -m pip install -e ".[remote]"
+```
+
+Run the first test torque-disabled. In remote mode, `--policy-path` is resolved
+by RunPod, not by the Mac. It can be a Hugging Face repository ID or an absolute
+checkpoint directory already downloaded on RunPod:
+
+```bash
+.venv/bin/python -m hepha_lerobot.evaluation.physical_rollout \
+  --policy-path tmeynier/hepha_pi0_physical_v2 \
+  --remote-server 127.0.0.1:8080 \
+  --remote-policy-type pi0 \
+  --remote-policy-device cuda \
+  --follower-port /dev/cu.usbmodem58FA1020401 \
+  --camera-index 0 \
+  --task "Put the white cube in the bowl" \
+  --n-action-steps 10 \
+  --fps 5 \
+  --remote-load-timeout 300 \
+  --remote-request-timeout 10 \
+  --watchdog-seconds 15 \
+  --duration-seconds 60 \
+  --dry-run
+```
+
+Once the dry run is responsive and the predictions look safe, repeat without
+`--dry-run`. A lost tunnel, failed remote request, invalid action, or watchdog
+expiry raises an error and exits the follower context, which disables torque.
+Use the exact same LeRobot version on both machines because the protocol sends
+version-specific Python data classes.
+
 For the first powered test, clear the full workspace and keep immediate power
 removal within reach:
 

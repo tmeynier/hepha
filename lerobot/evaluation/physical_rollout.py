@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 import torch
 from hepha_lerobot.evaluation.conditioned_rollout import _load_policy
+from hepha_lerobot.evaluation.remote_policy_client import HephaRemotePolicyClient
 from hepha_lerobot.recording.physical_teleop import (
     RecordingInterface,
     camera_frame,
@@ -60,6 +61,47 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--task", default=DEFAULT_TASK)
     parser.add_argument("--device", default="auto")
+    parser.add_argument(
+        "--remote-server",
+        help=(
+            "LeRobot policy-server endpoint through an SSH tunnel, normally "
+            "127.0.0.1:8080. Omit for local inference."
+        ),
+    )
+    parser.add_argument(
+        "--remote-policy-type",
+        choices=("act", "pi0"),
+        default="pi0",
+        help="Policy type loaded by the remote LeRobot server.",
+    )
+    parser.add_argument(
+        "--remote-policy-device",
+        default="cuda",
+        help="Inference device on the remote server (default: cuda).",
+    )
+    parser.add_argument(
+        "--remote-camera-name",
+        help="Camera feature sent to the server; defaults to base_0_rgb for PI0.",
+    )
+    parser.add_argument("--remote-connect-timeout", type=positive_float, default=15.0)
+    parser.add_argument(
+        "--remote-load-timeout",
+        type=positive_float,
+        default=300.0,
+        help="Maximum seconds for the server to load the policy.",
+    )
+    parser.add_argument(
+        "--remote-request-timeout",
+        type=positive_float,
+        default=10.0,
+        help="Maximum seconds for one remote observation/action request.",
+    )
+    parser.add_argument(
+        "--remote-prefetch-threshold",
+        type=float,
+        default=0.5,
+        help="Request the next chunk when this fraction of the current chunk remains.",
+    )
     parser.add_argument(
         "--n-action-steps",
         type=positive_integer,
@@ -259,57 +301,99 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
         raise ValueError("--duration-seconds cannot be negative")
     if not args.camera_name:
         raise ValueError("--camera-name cannot be empty")
+    if not 0.0 <= args.remote_prefetch_threshold <= 1.0:
+        raise ValueError("--remote-prefetch-threshold must be between 0 and 1")
+    if args.remote_server and args.temporal_ensemble_coeff is not None:
+        raise ValueError("Remote rollout does not support ACT temporal ensembling")
 
-    device = resolve_device(args.device)
-    policy_ref = _policy_reference(args.policy_path)
-    print(f"Loading policy {args.policy_path} on {device} before connecting hardware...")
-    policy, policy_config, preprocessor, postprocessor = _load_policy(
-        policy_ref,
-        device,
-        n_action_steps=args.n_action_steps,
-        temporal_ensemble_coeff=args.temporal_ensemble_coeff,
-    )
-    validate_physical_policy_features(
-        policy_config,
-        preprocessor=preprocessor,
-        camera_name=args.camera_name,
-        width=args.width,
-        height=args.height,
-    )
-    policy_label = "PI0" if policy_config.type == "pi0" else policy_config.type.upper()
-    print(
-        f"{policy_label} policy ready: "
-        f"chunk_size={policy_config.chunk_size}, "
-        f"n_action_steps={policy_config.n_action_steps}, "
-        f"camera={args.camera_name}, joints={len(CANONICAL_JOINTS)}"
-    )
-
-    follower = FeetechFollower(
-        calibration_path=args.follower_calibration,
-        joint_names=CANONICAL_JOINTS,
-        port=args.follower_port,
-        retries=args.retries,
-    )
-    capture = open_camera(
-        args.camera_index,
-        width=args.width,
-        height=args.height,
-        fps=args.fps,
-    )
-    first_frame = read_first_frame(capture)
-    interface = RecordingInterface(
-        capture=capture,
-        window_name=f"Hepha {policy_label} physical rollout camera {args.camera_index}",
-        record_width=args.width,
-        record_height=args.height,
-        preview_width=args.preview_width,
-        preview_height=args.preview_height,
-        enabled=args.preview,
-        fullscreen=args.preview_fullscreen,
-    )
-    interface.open(first_frame)
-
+    remote_client: HephaRemotePolicyClient | None = None
+    capture = None
     try:
+        if args.remote_server:
+            actions_per_chunk = args.n_action_steps or 10
+            remote_camera_name = args.remote_camera_name or (
+                "base_0_rgb" if args.remote_policy_type == "pi0" else args.camera_name
+            )
+            policy_label = (
+                "PI0" if args.remote_policy_type == "pi0" else args.remote_policy_type.upper()
+            )
+            remote_client = HephaRemotePolicyClient(
+                server_address=args.remote_server,
+                policy_type=args.remote_policy_type,
+                policy_path=args.policy_path,
+                policy_device=args.remote_policy_device,
+                actions_per_chunk=actions_per_chunk,
+                prefetch_threshold=args.remote_prefetch_threshold,
+                camera_name=remote_camera_name,
+                width=args.width,
+                height=args.height,
+                joints=CANONICAL_JOINTS,
+                connect_timeout=args.remote_connect_timeout,
+                load_timeout=args.remote_load_timeout,
+                request_timeout=args.remote_request_timeout,
+            )
+            print(
+                f"Connecting to trusted LeRobot policy server at {args.remote_server}; "
+                f"the server will load {args.policy_path} on {args.remote_policy_device}..."
+            )
+            load_seconds = remote_client.connect()
+            print(
+                f"Remote {policy_label} ready in {load_seconds:.1f} s: "
+                f"actions_per_chunk={actions_per_chunk}, camera={remote_camera_name}, "
+                f"joints={len(CANONICAL_JOINTS)}"
+            )
+            device = "remote"
+            policy = policy_config = preprocessor = postprocessor = None
+        else:
+            device = resolve_device(args.device)
+            policy_ref = _policy_reference(args.policy_path)
+            print(f"Loading policy {args.policy_path} on {device} before connecting hardware...")
+            policy, policy_config, preprocessor, postprocessor = _load_policy(
+                policy_ref,
+                device,
+                n_action_steps=args.n_action_steps,
+                temporal_ensemble_coeff=args.temporal_ensemble_coeff,
+            )
+            validate_physical_policy_features(
+                policy_config,
+                preprocessor=preprocessor,
+                camera_name=args.camera_name,
+                width=args.width,
+                height=args.height,
+            )
+            policy_label = "PI0" if policy_config.type == "pi0" else policy_config.type.upper()
+            print(
+                f"{policy_label} policy ready: "
+                f"chunk_size={policy_config.chunk_size}, "
+                f"n_action_steps={policy_config.n_action_steps}, "
+                f"camera={args.camera_name}, joints={len(CANONICAL_JOINTS)}"
+            )
+
+        follower = FeetechFollower(
+            calibration_path=args.follower_calibration,
+            joint_names=CANONICAL_JOINTS,
+            port=args.follower_port,
+            retries=args.retries,
+        )
+        capture = open_camera(
+            args.camera_index,
+            width=args.width,
+            height=args.height,
+            fps=args.fps,
+        )
+        first_frame = read_first_frame(capture)
+        interface = RecordingInterface(
+            capture=capture,
+            window_name=f"Hepha {policy_label} physical rollout camera {args.camera_index}",
+            record_width=args.width,
+            record_height=args.height,
+            preview_width=args.preview_width,
+            preview_height=args.preview_height,
+            enabled=args.preview,
+            fullscreen=args.preview_fullscreen,
+        )
+        interface.open(first_frame)
+
         with follower:
             if follower.joint_names != CANONICAL_JOINTS:
                 raise RuntimeError(
@@ -323,18 +407,23 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
             follower.disable_torque()
             positions = follower.read_joint_positions()
             preview, rgb = camera_frame(capture, width=args.width, height=args.height)
-            reset_policy_state(policy, preprocessor, postprocessor)
             warmup_started = time.perf_counter()
-            warmup_targets = predict_targets(
-                policy=policy,
-                preprocessor=preprocessor,
-                postprocessor=postprocessor,
-                positions=positions,
-                rgb=rgb,
-                camera_name=args.camera_name,
-                device=device,
-                task=args.task,
-            )
+            if remote_client is not None:
+                remote_client.reset()
+                warmup_action, _ = remote_client.predict_once(positions, rgb, args.task)
+                warmup_targets = action_targets(warmup_action)
+            else:
+                reset_policy_state(policy, preprocessor, postprocessor)
+                warmup_targets = predict_targets(
+                    policy=policy,
+                    preprocessor=preprocessor,
+                    postprocessor=postprocessor,
+                    positions=positions,
+                    rgb=rgb,
+                    camera_name=args.camera_name,
+                    device=device,
+                    task=args.task,
+                )
             warmup_seconds = time.perf_counter() - warmup_started
             initial_error = _maximum_error_degrees(warmup_targets, positions)
             print(
@@ -381,7 +470,10 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
                     f"torque limit={args.torque_limit}."
                 )
 
-            reset_policy_state(policy, preprocessor, postprocessor)
+            if remote_client is not None:
+                remote_client.reset()
+            else:
+                reset_policy_state(policy, preprocessor, postprocessor)
             period = 1.0 / args.fps
             started_at = time.monotonic()
             last_tick = started_at
@@ -394,16 +486,26 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
                 last_tick = cycle_started
                 positions = follower.read_joint_positions()
                 preview, rgb = camera_frame(capture, width=args.width, height=args.height)
-                requested = predict_targets(
-                    policy=policy,
-                    preprocessor=preprocessor,
-                    postprocessor=postprocessor,
-                    positions=positions,
-                    rgb=rgb,
-                    camera_name=args.camera_name,
-                    device=device,
-                    task=args.task,
-                )
+                remote_wait = 0.0
+                remote_queue = 0
+                if remote_client is not None:
+                    remote_action, remote_wait, remote_queue = remote_client.next_action(
+                        positions,
+                        rgb,
+                        args.task,
+                    )
+                    requested = action_targets(remote_action)
+                else:
+                    requested = predict_targets(
+                        policy=policy,
+                        preprocessor=preprocessor,
+                        postprocessor=postprocessor,
+                        positions=positions,
+                        rgb=rgb,
+                        camera_name=args.camera_name,
+                        device=device,
+                        task=args.task,
+                    )
                 if args.dry_run:
                     limiter.previous = positions.copy()
                 commanded = limiter.apply(requested, dt)
@@ -424,6 +526,10 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
                     f"policy delta={target_error:6.1f} deg | "
                     f"safe step={command_step:5.2f} deg"
                 )
+                if remote_client is not None:
+                    status += (
+                        f" | remote wait={remote_wait * 1000:6.1f} ms | queue={remote_queue:2d}"
+                    )
                 print(f"\r{status:<{previous_status_width}}", end="", flush=True)
                 previous_status_width = max(previous_status_width, len(status))
                 action = interface.present(
@@ -442,7 +548,10 @@ def run_physical_rollout(args: argparse.Namespace) -> None:
                 time.sleep(max(0.0, period - (time.monotonic() - cycle_started)))
             print()
     finally:
-        capture.release()
+        if remote_client is not None:
+            remote_client.close()
+        if capture is not None:
+            capture.release()
         cv2.destroyAllWindows()
 
 
